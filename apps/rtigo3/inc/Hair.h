@@ -193,6 +193,8 @@ namespace sg
         std::vector<float3> m_points;
         std::vector<float>  m_thickness;
 
+        float m_hairthickness_tempo = 0.02f;
+
         float m_density;
         float m_disparity;
 

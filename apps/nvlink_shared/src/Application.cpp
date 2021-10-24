@@ -75,22 +75,22 @@ Application::Application(GLFWwindow* window, const Options& options)
     m_timer.restart();
     
     // Initialize the top-level keywords of the scene description for faster search.
-    m_mapKeywordScene["albedo"]          = KS_ALBEDO;
-    m_mapKeywordScene["albedoTexture"]   = KS_ALBEDO_TEXTURE;
-    m_mapKeywordScene["cutoutTexture"]   = KS_CUTOUT_TEXTURE;
-    m_mapKeywordScene["roughness"]       = KS_ROUGHNESS;
-    m_mapKeywordScene["absorption"]      = KS_ABSORPTION;
-    m_mapKeywordScene["absorptionScale"] = KS_ABSORPTION_SCALE;
-    m_mapKeywordScene["ior"]             = KS_IOR;
-    m_mapKeywordScene["thinwalled"]      = KS_THINWALLED;
-    m_mapKeywordScene["material"]        = KS_MATERIAL;
-    m_mapKeywordScene["identity"]        = KS_IDENTITY;
-    m_mapKeywordScene["push"]            = KS_PUSH;
-    m_mapKeywordScene["pop"]             = KS_POP;
-    m_mapKeywordScene["rotate"]          = KS_ROTATE;
-    m_mapKeywordScene["scale"]           = KS_SCALE;
-    m_mapKeywordScene["translate"]       = KS_TRANSLATE;
-    m_mapKeywordScene["model"]           = KS_MODEL;
+    m_mapKeywordScene["albedo"]                 = KS_ALBEDO;
+    m_mapKeywordScene["albedoTexture"]          = KS_ALBEDO_TEXTURE;
+    m_mapKeywordScene["cutoutTexture"]          = KS_CUTOUT_TEXTURE;
+    m_mapKeywordScene["roughness"]              = KS_ROUGHNESS;
+    m_mapKeywordScene["absorption"]             = KS_ABSORPTION;
+    m_mapKeywordScene["absorptionScale"]        = KS_ABSORPTION_SCALE;
+    m_mapKeywordScene["ior"]                    = KS_IOR;
+    m_mapKeywordScene["thinwalled"]             = KS_THINWALLED;
+    m_mapKeywordScene["material"]               = KS_MATERIAL;
+    m_mapKeywordScene["identity"]               = KS_IDENTITY;
+    m_mapKeywordScene["push"]                   = KS_PUSH;
+    m_mapKeywordScene["pop"]                    = KS_POP;
+    m_mapKeywordScene["rotate"]                 = KS_ROTATE;
+    m_mapKeywordScene["scale"]                  = KS_SCALE;
+    m_mapKeywordScene["translate"]              = KS_TRANSLATE;
+    m_mapKeywordScene["model"]                  = KS_MODEL;
 
     const double timeConstructor = m_timer.getTime();
 

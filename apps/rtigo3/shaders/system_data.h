@@ -40,7 +40,7 @@
 struct SystemData
 {
   // 16 byte alignment
-  // int4 rect; // Currently unused. Not implementing a tiled renderer in this example
+  int4 rect;
 
   // 8 byte alignment
   OptixTraversableHandle topObject;
@@ -49,6 +49,7 @@ struct SystemData
   // This is always sized to the resolution, not always matching the launch dimension.
   // Using a CUdeviceptr here to allow for different buffer formats without too many casts.
   CUdeviceptr         outputBuffer;
+  CUdeviceptr         varianceBuffer;
   // These buffers are used differently among the rendering strategies.
   CUdeviceptr         tileBuffer;
   CUdeviceptr         texelBuffer;
@@ -70,8 +71,10 @@ struct SystemData
   // 4 byte alignment 
   int deviceCount;   // Number of devices doing the rendering.
   int deviceIndex;   // Device index to be able to distinguish the individual devices in a multi-GPU environment.
+  int distribution;  // Indicate if the tile distribution inside the ray generation program should be used. // FIXME Put booleans into bitfield if there are more.
   int iterationIndex;
   int samplesSqrt;
+  int screenshotImageNum;
 
   float sceneEpsilon;
   float clockScale;
@@ -86,16 +89,29 @@ struct SystemData
   unsigned int envHeight;
   float        envIntegral;
   float        envRotation;
+
+  bool catchVariance;
 };
 
 
 // SBT Record data for the hit group. This is used on the device to calculate attributes!
 struct GeometryInstanceData
 {
+  
   CUdeviceptr attributes;
   CUdeviceptr indices;
   int         materialIndex;
   int         lightIndex; // Negative means not a light.
+  
+  //For hair
+
+  CUdeviceptr  strand_rand;     // random numbers vector.  .x : uniform[0,1], .y & .z : normal[0,1]
+  CUdeviceptr  strand_i;     // strand index per segment
+  CUdeviceptr  strand_info;  // info.x = segment base
+                                // info.y = strand length (segments)
+
+
+
 };
 
 // Helper structure to optimize the lens shader direct callable arguments.

@@ -56,19 +56,21 @@ tileSize 16 16
 # The camera samples are distributed with a fixed rotated grid.
 # Final frame rendering algorithms need the samples per pixels anyway.
 
-samplesSqrt 16
+samplesSqrt 32
 
 # Environment light 
 # 0 = black, no light.
 # 1 = white, not importance sampled.
 # 2 = spherical HDR environment map, importance sampled, uses the file specified by envMap
 
-miss 2
+miss 1
 
 # Spherical HDR environment map, only used with "miss 2".
 # envMap "<filename>"
 
-envMap "NV_Default_HDR_3000x1500.hdr"
+envMap "TEST 9" "NV_TEST_9_HDR_3000x1500_Mod_19.hdr"
+
+
 
 # Spherical environment rotation around up-axis, only used with "miss 2"
 # envRotation <float> in range [0.0f, 1.0f]
@@ -80,7 +82,11 @@ envRotation 0
 # 1 = 1x1 meter square light 1.95 meters above the scene to fit in a 2x2x2 box with floor at y = 0 (Cornell Box).
 # 2 = 4x4 meter square light 4 meters above the scene.
 
-light 0
+light 1 # front
+light 2 # back
+light 3 # left
+light 4 # right
+light 5 # top
 
 # Path lengths minimum and maximum.
 # Minimum path length before Russian Roulette kicks in.
@@ -121,12 +127,25 @@ center 0 1 0
 # yfov in degrees [1, 179]
 # distance from center of interest [0.0f, inf] in meters
 
+#lock_camera #bool lock camera
+
 camera 0.815 0.6 45 10
+camera 0.251406 0.570703 32 10
+camera 0.981875 0.535547 32 10
+camera 0.427188 0.529688 32 10
+camera 0.7475 0.525781 32 10
+camera 0.251406 0.891016 32 10
+
+
 
 # Path with an existing(!) folder and optional partial filename prefix which should receive the screenshots. 
 # If this is just a folder, end it with '/'
 
 prefixScreenshot "./screenshots/rtigo3"
+
+prefixColorSwitch "./ColorSwitch/"
+
+prefixSettings "./Settings/"
 
 # Tonemapper settings.
 # Neutral tonemapper GUI settings showing the linear image:

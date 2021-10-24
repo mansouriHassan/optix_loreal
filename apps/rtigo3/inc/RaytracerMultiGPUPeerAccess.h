@@ -48,6 +48,7 @@ public:
   unsigned int render();
   void updateDisplayTexture();
   const void* getOutputBufferHost();
+  const void* getOutputVarBufferHost();
 };
 
 #endif // RAYTRACER_MULTI_GPU_PEER_ACCESS_H

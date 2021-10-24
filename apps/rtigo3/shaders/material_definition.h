@@ -36,7 +36,10 @@
 // Just some hardcoded material parameter system which allows to show a few fundamental BSDFs.
 struct MaterialDefinition
 {
+  // For Triangles
   // 8 byte alignment.
+  cudaTextureObject_t textureEye;
+  cudaTextureObject_t textureHead;
   cudaTextureObject_t textureAlbedo;
   cudaTextureObject_t textureCutout;
   float2              roughness;
@@ -48,9 +51,20 @@ struct MaterialDefinition
   float         ior;        // Index of refraction.
   unsigned int  flags;      // Thin-walled on/off (FLAG_THINWALLED)
 
+  // For Curves
+  float			whitepercen; // White hair percentage
+  float			scale_angle_rad; //
+  float			melanin_concentration;
+  float			melanin_ratio;
+  float			melanin_concentration_disparity;
+  float			melanin_ratio_disparity;
+  float			betaM;
+  float			betaN;
+  int			bcsdf_resolution;
+
   // Manual padding to 16-byte alignment goes here.
-  int pad0;
-  //int pad1;
+  //int			pad0;
+  //int			pad1;
   //int pad3;
   //int pad4;
 };

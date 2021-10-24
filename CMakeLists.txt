@@ -31,7 +31,7 @@ else(UNIX)
   endif(APPLE)
 endif(UNIX)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
@@ -74,14 +74,5 @@ MACRO(TARGET_INCLUDE_SYMBOL target symbol)
     add_target_properties( ${target} LINK_FLAGS "-Wl,--undefined=${symbol}" )
   endif()
 ENDMACRO()
-
-# Search for all shipping OptiX 7 versions before adding subdirectories.
-# The resp. FindOptiX*.cmake looks for OPTIX7_PATH, OPTIX71_PATH, OPTIX72_PATH, OPTIX73_PATH environment variables.
-# Doing this here allows excluding examples from the build which require a specific OptiX 7 minor version.
-# If multiple OptiX SDK versions are found, the newest is picked by the individual examples.
-find_package(OptiX73)
-find_package(OptiX72)
-find_package(OptiX71)
-find_package(OptiX7)
 
 add_subdirectory( apps )

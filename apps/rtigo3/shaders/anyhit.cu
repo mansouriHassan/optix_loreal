@@ -28,7 +28,7 @@
 
 
 #include "config.h"
-
+#include <fstream>
 #include <optix.h>
 
 #include "system_data.h"
@@ -53,7 +53,7 @@ extern "C" __global__ void __anyhit__radiance_cutout()
   {
     // Cast the CUdeviceptr to the actual format for Triangles geometry.
     const uint3*              indices    = reinterpret_cast<uint3*>(theData->indices);
-    const TriangleAttributes* attributes = reinterpret_cast<TriangleAttributes*>(theData->attributes);
+    const VertexAttributes* attributes = reinterpret_cast<VertexAttributes*>(theData->attributes);
 
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
@@ -90,6 +90,16 @@ extern "C" __global__ void __anyhit__shadow()
   optixTerminateRay();
 }
 
+extern "C" __global__ void __anyhit__shadow_curve()
+{
+    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+
+    thePrd->flags |= FLAG_SHADOW; // Visbility check failed.
+
+    optixTerminateRay();
+}
+
+
 
 extern "C" __global__ void __anyhit__shadow_cutout()
 {
@@ -105,7 +115,7 @@ extern "C" __global__ void __anyhit__shadow_cutout()
     const uint3* indices = reinterpret_cast<uint3*>(theData->indices);
     const uint3  tri     = indices[thePrimitiveIndex];
 
-    const TriangleAttributes* attributes = reinterpret_cast<TriangleAttributes*>(theData->attributes);
+    const VertexAttributes* attributes = reinterpret_cast<VertexAttributes*>(theData->attributes);
 
     const float2 theBarycentrics = optixGetTriangleBarycentrics(); // beta and gamma
     const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;

@@ -122,7 +122,7 @@ namespace sg {
         if (strncmp(m_header.magic, "HAIR", 4) != 0)
             std::cout << "Hair-file error: Invalid file format." + fileName << std::endl;
         m_header.fileInfo[87] = 0;
-        m_header.defaultThickness = 0.009f;
+        m_header.defaultThickness = m_hairthickness_tempo;
 
         // Segments array(unsigned short)
         // The segements array contains the number of linear segments per strand;
@@ -144,7 +144,7 @@ namespace sg {
         std::vector<unsigned short> strandSegments_copy = strandSegments;
 
         // copy the strandSegments density_int_part times 
-        for (unsigned int i = 0; i < density_int_part; i++)
+        for (int i = 0; i < density_int_part; i++)
         {
             strandSegments.insert(strandSegments.end(), strandSegments_copy.begin(), strandSegments_copy.end());
         }
@@ -198,12 +198,12 @@ namespace sg {
         std::normal_distribution<float> dis_norm(1.f, m_disparity/20.f);
         float rand_ratio; 
 
-        for (unsigned int k = 0; k < density_int_part; k++)
+        for (int k = 0; k < density_int_part; k++)
         {
             for (unsigned int i = 0; i < numberOfStrands(); i++) {
                 
                 rand_ratio = dis_norm(gen);
-                for (unsigned int j = m_strands[i]; j < m_strands[i+1]; j++) {
+                for (int j = m_strands[i]; j < m_strands[i+1]; j++) {
                     //std::cout << j << " ;" << std::endl;
                     point = m_points[j] * rand_ratio;
                     attribute.vertex = point;
@@ -216,7 +216,7 @@ namespace sg {
         
         for (auto i : duplicated_indices) {
             rand_ratio = dis_norm(gen);
-            for (unsigned int j = m_strands[i]; j < m_strands[i+1]; j++) {
+            for (int j = m_strands[i]; j < m_strands[i+1]; j++) {
                 point = m_points[j] * rand_ratio;
                 attribute.vertex = point;
 
@@ -268,7 +268,7 @@ namespace sg {
         if (strncmp(m_header.magic, "HAIR", 4) != 0)
             std::cout << "Hair-file error: Invalid file format." + fileName << std::endl;
         m_header.fileInfo[87] = 0;
-        m_header.defaultThickness = 0.009f;
+        m_header.defaultThickness = m_hairthickness_tempo;
 
         // Segments array(unsigned short)
         // The segements array contains the number of linear segments per strand;
@@ -290,7 +290,7 @@ namespace sg {
         std::vector<unsigned short> strandSegments_copy = strandSegments;
 
         // copy the strandSegments density_int_part times 
-        for (unsigned int i = 0; i < density_int_part; i++)
+        for (int i = 0; i < density_int_part; i++)
         {
             strandSegments.insert(strandSegments.end(), strandSegments_copy.begin(), strandSegments_copy.end());
         }
@@ -356,12 +356,12 @@ namespace sg {
         std::normal_distribution<float> dis_norm(1.f, m_disparity / 20.f);
         float rand_ratio;
 
-        for (unsigned int k = 0; k < density_int_part; k++)
+        for (int k = 0; k < density_int_part; k++)
         {
             for (unsigned int i = 0; i < numberOfStrands(); i++) {
 
                 rand_ratio = dis_norm(gen);
-                for (unsigned int j = m_strands[i]; j < m_strands[i + 1]; j++) {
+                for (int j = m_strands[i]; j < m_strands[i + 1]; j++) {
                     //std::cout << j << " ;" << std::endl;
                     point = m_points[j] * rand_ratio;
                     attribute.vertex = point;
@@ -374,7 +374,7 @@ namespace sg {
 
         for (auto i : duplicated_indices) {
             rand_ratio = dis_norm(gen);
-            for (unsigned int j = m_strands[i]; j < m_strands[i + 1]; j++) {
+            for (int j = m_strands[i]; j < m_strands[i + 1]; j++) {
                 point = m_points[j] * rand_ratio;
                 attribute.vertex = point;
 

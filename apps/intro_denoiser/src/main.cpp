@@ -56,10 +56,11 @@ int runApp(Options const& options)
 
   //glfwWindowHint(GLFW_DECORATED, windowBorder);
 
-  GLFWwindow* window = glfwCreateWindow(widthClient, heightClient, "intro_denoiser - Copyright (c) 2021 NVIDIA Corporation", NULL, NULL);
+  GLFWwindow* window = glfwCreateWindow(widthClient, heightClient, "intro_denoiser - Copyright (c) 2020 NVIDIA Corporation", NULL, NULL);
   if (!window)
   {
     error_callback(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
+    glfwTerminate();
     return APP_ERROR_CREATE_WINDOW;
   }
 
@@ -68,6 +69,7 @@ int runApp(Options const& options)
   if (glewInit() != GL_NO_ERROR)
   {
     error_callback(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
+    glfwTerminate();
     return APP_ERROR_GLEW_INIT;
   }
     
@@ -79,6 +81,7 @@ int runApp(Options const& options)
   {
     std::cerr << "ERROR: Application failed to initialize successfully.\n";
     ilShutDown();
+    glfwTerminate();
     return APP_ERROR_APP_INIT;
   }
 
@@ -136,8 +139,6 @@ int main(int argc, char *argv[])
   {
     result = runApp(options);
   }
-
-  glfwTerminate();
 
   return result;
 }

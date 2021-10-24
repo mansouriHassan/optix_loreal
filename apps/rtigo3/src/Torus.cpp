@@ -78,7 +78,7 @@ namespace sg
         const float sinPhi = sinf(phi);
         const float cosPhi = cosf(phi);
 
-        TriangleAttributes attrib;
+        VertexAttributes attrib;
 
         attrib.vertex   = make_float3(radius * cosPhi, outerRadius * sinTheta, radius * -sinPhi);
         attrib.tangent  = make_float3(-sinPhi, 0.0f, -cosPhi);

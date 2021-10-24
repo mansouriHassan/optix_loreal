@@ -46,7 +46,7 @@ namespace sg
     const float back = -1.0f;
     const float front = 1.0f;
 
-    TriangleAttributes attrib;
+    VertexAttributes attrib;
 
     // Left.
     attrib.tangent  = make_float3(0.0f, 0.0f, 1.0f);

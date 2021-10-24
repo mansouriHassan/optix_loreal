@@ -7,12 +7,54 @@ material default brdf_diffuse
 # The ASSIMP loader uses the name "DefaultMaterial" for OBJ models without MTL.
 # The albedo is read from the diffuse color in the assimp representation, which is grey 0.8 for an OBJ model without MTL.
 
+#Hair
 material Hair1 bsdf_hair
-
 material Hair2 bsdf_hair
+#Eye
+material 02_-_Default brdf_diffuse 
+#Head
+material Material__11 brdf_diffuse 
+#Eyelash
+material Material__12 brdf_diffuse 
 
-push
+
 scale .04 .04 .04
 translate 0.0 1.0 0.0
-model hair_half "w_straight.hair" Hair1 Hair2
+push
+rotate 1.0 0.0 0.0 -90
+rotate 0.0 1.0 0.0 -90
+translate -1.0 0.0 0.0
+translate 0.0 1.0 0.0
+model assimp "woman.obj"
+pop
+model hair_half  "Straight hair" "w_straight.hair" Hair1 Hair2 # half_hair allows to generate two symetric geometries that represent a half hair. These two geometries will have the Hair1 and Hair2 material defined before
+model hair_half  "Curly hair" "w_curly.hair" Hair1 Hair2
+model hair_half  "Wavy hair" "w_wavy.hair" Hair1 Hair2
 
+
+
+# settings Switch5_Setting ".\Settings\Switch5_Setting.settings"
+settings Settings_Pilote ".\Settings\Settings_Pilote.settings"
+
+# color Switch5 ".\ColorSwitch\Switch5.color"
+# color Test25 ".\ColorSwitch\Test25.color"
+# color Switch6 ".\ColorSwitch\Switch6.color"
+# color R7A_R6M ".\ColorSwitch\R7A_R6M.color"
+#color D4D-N5L ".\ColorSwitch\D4D-N5L.color"
+#color D4D-N4C ".\ColorSwitch\D4D-N4C.color"
+# color SwitchTest ".\ColorSwitch\SwitchTest.color"
+# settings TestTest_Setting ".\Settings\TestTest_Setting.settings"
+# color TestTest ".\ColorSwitch\TestTest.color"
+# color TestTest2 ".\ColorSwitch\TestTest2.color"
+# color TestTest3 ".\ColorSwitch\TestTest3.color"
+# color TestTest4 ".\ColorSwitch\TestTest4.color"
+# settings D4D_N4C_V2_Setting ".\Settings\D4D_N4C_V2_Setting.settings"
+# color D4D_N4C_V2 ".\ColorSwitch\D4D_N4C_V2.color"
+#settings Switch7_Setting ".\Settings\Switch7_Setting.settings"
+#color Switch7 ".\ColorSwitch\Switch7.color"
+#color Switch8 ".\ColorSwitch\Switch8.color"
+#color Switch9 ".\ColorSwitch\Switch9.color"
+#settings Switch-default-01_Setting ".\Settings\Switch-default-01_Setting.settings"
+#color Switch-default-01 ".\ColorSwitch\Switch-default-01.color"
+#settings Switch_test_0614_Setting ".\Settings\Switch_test_0614_Setting.settings"
+#color Switch_test_0614 ".\ColorSwitch\Switch_test_0614.color"

@@ -49,10 +49,17 @@ static int runApp(Options const& options)
   int width  = std::max(1, options.getWidth());
   int height = std::max(1, options.getHeight());
  
-  GLFWwindow* window = glfwCreateWindow(width, height, "rtigo3 - Copyright (c) 2020 NVIDIA Corporation", NULL, NULL);
+  auto monitor = glfwGetPrimaryMonitor();
+  GLFWwindow* window = glfwCreateWindow(width, height, "rtigo3 - Copyright (c) 2020 NVIDIA Corporation", nullptr, NULL);
+ // const GLFWvidmode* wmode = glfwGetVideoMode(monitor);
+  //auto scr_width = wmode->width;
+  //auto scr_height = wmode->height;
+  //glfwSetWindowSize(window, scr_width, scr_height);
+
   if (!window)
   {
     callbackError(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
+    glfwTerminate();
     return APP_ERROR_CREATE_WINDOW;
   }
 
@@ -61,6 +68,7 @@ static int runApp(Options const& options)
   if (glewInit() != GL_NO_ERROR)
   {
     callbackError(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
+    glfwTerminate();
     return APP_ERROR_GLEW_INIT;
   }
     
@@ -72,6 +80,7 @@ static int runApp(Options const& options)
   {
     std::cerr << "ERROR: Application() failed to initialize successfully.\n";
     ilShutDown();
+    glfwTerminate();
     return APP_ERROR_APP_INIT;
   }
 
@@ -83,22 +92,26 @@ static int runApp(Options const& options)
     bool finish = false;
     while (!finish && !glfwWindowShouldClose(window))
     {
-      glfwPollEvents(); // Render continuously. Battery drainer!
 
-      glfwGetFramebufferSize(window, &width, &height);
+        glfwPollEvents(); // Render continuously. Battery drainer!
 
-      g_app->reshape(width, height);
-      g_app->guiNewFrame();
-      //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
-      g_app->guiWindow();             // This application's GUI window rendering commands. 
-      g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
-      finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
-      g_app->display();               // OpenGL display always required to lay the background for the GUI.
-      g_app->guiRender();             // Render all ImGUI elements at last.
 
-      glfwSwapBuffers(window);
 
-      //glfwWaitEvents(); // Render only when an event is happening. Needs some glfwPostEmptyEvent() to prevent GUI lagging one frame behind when ending an action.
+        glfwGetFramebufferSize(window, &width, &height);
+
+        g_app->reshape(width, height);
+        g_app->guiNewFrame();
+        //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
+        //g_app->guiWindow();             // This application's GUI window rendering commands.
+        g_app->guiUserWindow();           // This application's GUI window renderind commands for user expert color.
+        g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
+        finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
+        g_app->display();               // OpenGL display always required to lay the background for the GUI.
+        g_app->guiRender();             // Render all ImGUI elements at last.
+
+        glfwSwapBuffers(window);
+
+        //glfwWaitEvents(); // Render only when an event is happening. Needs some glfwPostEmptyEvent() to prevent GUI lagging one frame behind when ending an action.
     }
   }
   else if (mode == 1) // Batched benchmark single shot. // FIXME When not using anything OpenGL, the whole window and OpenGL setup could be removed.
@@ -118,6 +131,7 @@ int main(int argc, char *argv[])
 {
   glfwSetErrorCallback(callbackError);
 
+
   if (!glfwInit())
   {
     callbackError(APP_ERROR_GLFW_INIT, "GLFW failed to initialize.");
@@ -130,10 +144,19 @@ int main(int argc, char *argv[])
 
   if (options.parseCommandLine(argc, argv))
   {
-    result = runApp(options);
+      if (options.getHeight() == 0 || options.getWidth() == 0)
+      {
+          auto monitor = glfwGetPrimaryMonitor();
+          const GLFWvidmode* wmode = glfwGetVideoMode(monitor);
+          options.setWidth(wmode->width);
+          options.setHeight(wmode->height);
+          //const GLFWvidmode* wmode = glfwGetVideoMode(monitor);
+          //auto scr_width = wmode->width;
+          //auto scr_height = wmode->height;
+          //glfwSetWindowSize(window, scr_width, scr_height);
+      }
+      result = runApp(options);
   }
-
-  glfwTerminate();
 
   return result;
 }

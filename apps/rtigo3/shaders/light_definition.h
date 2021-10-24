@@ -53,8 +53,8 @@ struct LightDefinition
   float3 emission;
 
   // Manual padding to float4 alignment goes here.
-  float unused0;
-  float unused1;
+  float lighting_activated;
+  float location;
   float unused2;
 };
 

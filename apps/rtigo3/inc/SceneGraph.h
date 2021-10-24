@@ -48,7 +48,8 @@ namespace sg
   {
     NT_GROUP,
     NT_INSTANCE,
-    NT_TRIANGLES
+    NT_TRIANGLES,
+    NT_CURVES
   };
 
   class Node
@@ -63,9 +64,12 @@ namespace sg
     {
       return m_id;
     }
+    bool is_activated() { return activated; }
+    void set_activation (bool v) {  activated = v; }
 
   private:
     unsigned int m_id;
+    bool activated;
   };
 
 
@@ -83,17 +87,17 @@ namespace sg
     void createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius, const float outerRadius);
     void createParallelogram(float3 const& position, float3 const& vecU, float3 const& vecV, float3 const& normal);
 
-    void setAttributes(std::vector<TriangleAttributes> const& attributes);
-    std::vector<TriangleAttributes> const& getAttributes() const;
+    void setAttributes(std::vector<VertexAttributes> const& attributes);
+    std::vector<VertexAttributes> const& getAttributes() const;
     
     void setIndices(std::vector<unsigned int> const&);
     std::vector<unsigned int> const& getIndices() const;
 
   private:
-    std::vector<TriangleAttributes> m_attributes;
+    std::vector<VertexAttributes> m_attributes;
     std::vector<unsigned int>       m_indices; // If m_indices.size() == 0, m_attributes are independent primitives.
   };
-
+ 
 
   class Instance : public Node
   {
@@ -131,7 +135,7 @@ namespace sg
     sg::NodeType getType() const;
 
     void addChild(std::shared_ptr<sg::Instance> instance); // Groups can only hold Instances.
-
+    void removeCurvesChild();
     size_t getNumChildren() const;
     std::shared_ptr<sg::Instance> getChild(size_t index);
 

@@ -28,6 +28,9 @@
 
 #include "config.h"
 
+//TO DELETE
+#include <fstream>
+
 #include <optix.h>
 
 #include "system_data.h"
@@ -38,9 +41,79 @@
 #include "light_definition.h"
 #include "shader_common.h"
 #include "random_number_generators.h"
+#include "curve.h"
 
 
 extern "C" __constant__ SystemData sysData;
+
+
+static __forceinline__ __device__ float3 getHitPoint()
+{
+    const float  t = optixGetRayTmax();
+    const float3 rayOrigin = optixGetWorldRayOrigin();
+    const float3 rayDirection = optixGetWorldRayDirection();
+
+    return rayOrigin + t * rayDirection;
+}
+
+static __forceinline__ __device__ void stateQuadratic(const int primitiveIndex, State& state)
+{
+    const float u = optixGetCurveParameter();
+    const OptixTraversableHandle gas = optixGetGASTraversableHandle();
+    const unsigned int           gasSbtIndex = optixGetSbtGASIndex();
+    float4                       controlPoints[3];
+
+    optixGetQuadraticBSplineVertexData(gas, primitiveIndex, gasSbtIndex, 0.0f, controlPoints);
+
+    QuadraticBSplineSegment interpolator(controlPoints);
+    float3               hitPoint = getHitPoint();
+    // interpolators work in object space
+    hitPoint = optixTransformPointFromWorldToObjectSpace(hitPoint);
+    
+    state.normal = state.normalGeo = normalize(optixTransformNormalFromObjectToWorldSpace(surfaceNormal(interpolator, u, hitPoint)));
+    state.tangent = normalize(optixTransformVectorFromObjectToWorldSpace(curveTangent(interpolator, u)));
+    state.radius = interpolator.radius(u);
+}
+
+static __forceinline__ __device__ void stateLinear(const int primitiveIndex, State& state)
+{
+    const float u = optixGetCurveParameter();
+    const OptixTraversableHandle gas = optixGetGASTraversableHandle();
+    const unsigned int           gasSbtIndex = optixGetSbtGASIndex();
+    float4                       controlPoints[2];
+
+    optixGetLinearCurveVertexData(gas, primitiveIndex, gasSbtIndex, 0.0f, controlPoints);
+
+    LinearBSplineSegment interpolator(controlPoints);
+    float3               hitPoint = getHitPoint();
+    // interpolators work in object space
+    hitPoint = optixTransformPointFromWorldToObjectSpace(hitPoint);
+
+    state.normal = state.normalGeo = normalize(optixTransformNormalFromObjectToWorldSpace(surfaceNormal(interpolator, u, hitPoint)));
+    state.tangent = normalize(optixTransformVectorFromObjectToWorldSpace(curveTangent(interpolator, u)));
+    state.radius = interpolator.radius(u);
+}
+
+// Compute normal
+//
+/*
+static __forceinline__ __device__ float3 computeNormal(OptixPrimitiveType type, const int primitiveIndex)
+{
+    switch (type) {
+    case OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR:
+        return  normalLinear(primitiveIndex);
+        break;
+    case OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE:
+        return normalQuadratic(primitiveIndex);
+        break;
+    case OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE:
+        return  normalCubic(primitiveIndex);
+        break;
+    }
+    return make_float3(0.0f);
+}
+
+*/
 
 
 // Get the 3x4 object to world transform and its inverse from a two-level hierarchy.
@@ -126,65 +199,79 @@ __forceinline__ __device__ float3 transformNormal(const float4* m, float3 const&
 extern "C" __global__ void __closesthit__radiance()
 {
   GeometryInstanceData* theData = reinterpret_cast<GeometryInstanceData*>(optixGetSbtDataPointer());
-
-  // Cast the CUdeviceptr to the actual format for Triangles geometry.
-  const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
-
-  const uint3* indices = reinterpret_cast<uint3*>(theData->indices);
-  const uint3  tri     = indices[thePrimitiveIndex];
-
-  const TriangleAttributes* attributes = reinterpret_cast<TriangleAttributes*>(theData->attributes);
-
-  TriangleAttributes const& attr0 = attributes[tri.x];
-  TriangleAttributes const& attr1 = attributes[tri.y];
-  TriangleAttributes const& attr2 = attributes[tri.z];
-
-  const float2 theBarycentrics = optixGetTriangleBarycentrics(); // beta and gamma
-  const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
-
-  const float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
-  const float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
-  const float3 ns = attr0.normal  * alpha + attr1.normal  * theBarycentrics.x + attr2.normal  * theBarycentrics.y;
-  
-  State state; // All in world space coordinates!
-
-  state.texcoord = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
-
-  float4 objectToWorld[3];
-  float4 worldToObject[3];
-  
-  getTransforms(objectToWorld, worldToObject);
-  
-  state.normalGeo = normalize(transformNormal(worldToObject, ng));
-  state.tangent   = normalize(transformVector(objectToWorld, tg));
-  state.normal    = normalize(transformNormal(worldToObject, ns));
+  State state;
 
   // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
   PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
-
   thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-  
+
   //thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
   thePrd->pos += thePrd->wi * thePrd->distance; // DEBUG Check which version is more efficient.
 
+  const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
+  if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
+
+      // Cast the CUdeviceptr to the actual format for Triangles geometry.
+
+      const uint3* indices = reinterpret_cast<uint3*>(theData->indices);
+      const uint3  tri = indices[thePrimitiveIndex];
+
+      const VertexAttributes* attributes = reinterpret_cast<VertexAttributes*>(theData->attributes);
+
+      VertexAttributes const& attr0 = attributes[tri.x];
+      VertexAttributes const& attr1 = attributes[tri.y];
+      VertexAttributes const& attr2 = attributes[tri.z];
+
+      const float2 theBarycentrics = optixGetTriangleBarycentrics(); // beta and gamma
+      const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
+
+      float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
+      float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
+      float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
+
+      state.texcoord = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
+
+      float4 objectToWorld[3];
+      float4 worldToObject[3];
+
+      getTransforms(objectToWorld, worldToObject);
+
+      state.normalGeo = normalize(transformNormal(worldToObject, ng));
+      state.tangent = normalize(transformVector(objectToWorld, tg));
+      state.normal = normalize(transformNormal(worldToObject, ns));
+  }
+  else if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE){
+      //const unsigned int* strand_indices = reinterpret_cast<unsigned int*>(theData->strand_i);
+      //const unsigned int strand_index = strand_indices[thePrimitiveIndex];
+      state.rand = reinterpret_cast<float3*>(theData->strand_rand)[thePrimitiveIndex];
+
+      stateQuadratic(thePrimitiveIndex, state);
+
+      const TBN tbn(state.tangent);
+      state.texcoord = normalize(tbn.bitangent);
+  }
+    
   // Explicitly include edge-on cases as frontface condition!
   // Keeps the material stack from overflowing at silhouettes.
   // Prevents that silhouettes of thin-walled materials use the backface material.
   // Using the true geometry normal attribute as originally defined on the frontface!
   thePrd->flags |= (0.0f <= dot(thePrd->wo, state.normalGeo)) ? FLAG_FRONTFACE : 0;
 
+  
   if ((thePrd->flags & FLAG_FRONTFACE) == 0) // Looking at the backface?
   {
     // Means geometric normal and shading normal are always defined on the side currently looked at.
     // This gives the backfaces of opaque BSDFs a defined result.
     state.normalGeo = -state.normalGeo;
     state.tangent   = -state.tangent;
-    state.normal    = -state.normal;
-    // Explicitly DO NOT recalculate the frontface condition!
+    state.normal = -state.normal;
+    if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE)
+        state.texcoord = -state.texcoord;
+    
   }
   
   thePrd->radiance = make_float3(0.0f);
-
+  
   // When hitting a geometric light, evaluate the emission first, because this needs the previous diffuse hit's pdf.
   if (0 <= theData->lightIndex &&       // This material is emissive and
       (thePrd->flags & FLAG_FRONTFACE)) // we're looking at the front face.
@@ -202,6 +289,9 @@ extern "C" __global__ void __closesthit__radiance()
       // If it's an implicit light hit from a diffuse scattering event and the light emission was not returning a zero pdf (e.g. backface or edge on).
       if ((thePrd->flags & FLAG_DIFFUSE) && DENOMINATOR_EPSILON < lightPdf)
       {
+        // The light.areaId buffer and light.area are always present on mesh lights.
+        //pdf *= light.areaId[thePrimitiveIndex] / light.area; // This is not needed for parallelogram lights, the primitive area is the light area.
+
         // Scale the emission with the power heuristic between the initial BSDF sample pdf and this implicit light sample pdf.
         emission *= powerHeuristic(thePrd->pdf, lightPdf);
       }
@@ -214,6 +304,7 @@ extern "C" __global__ void __closesthit__radiance()
       return;
     }
   }
+  
 
   // Start fresh with the next BSDF sample. (Either of these values remaining zero is an end-of-path condition.)
   // The pdf of the previous evene was needed for the emission calculation above.
@@ -226,11 +317,27 @@ extern "C" __global__ void __closesthit__radiance()
 
   if (material.textureAlbedo != 0)
   {
-    const float3 texColor = make_float3(tex2D<float4>(material.textureAlbedo, state.texcoord.x, state.texcoord.y));
+      const float3 texColor = make_float3(tex2D<float4>(material.textureAlbedo, state.texcoord.x, state.texcoord.y));
+
+      // Modulate the incoming color with the texture.
+      state.albedo *= texColor;               // linear color, resp. if the texture has been uint8 and readmode set to use sRGB, then sRGB.
+      //state.albedo *= powf(texColor, 2.2f); // sRGB gamma correction done manually.
+  }
+  if (material.textureEye != 0)
+  {
+    const float3 texColor = make_float3(tex2D<float4>(material.textureEye, state.texcoord.x, state.texcoord.y));
 
     // Modulate the incoming color with the texture.
-    state.albedo *= texColor;               // linear color, resp. if the texture has been uint8 and readmode set to use sRGB, then sRGB.
-    //state.albedo *= powf(texColor, 2.2f); // sRGB gamma correction done manually.
+    //state.albedo *= texColor;               // linear color, resp. if the texture has been uint8 and readmode set to use sRGB, then sRGB.
+    state.albedo *= powf(texColor, 2.f); // sRGB gamma correction done manually.
+  }
+  if (material.textureHead != 0)
+  {
+      const float3 texColor = make_float3(tex2D<float4>(material.textureHead, state.texcoord.x, state.texcoord.y));
+
+      // Modulate the incoming color with the texture.
+      //state.albedo *= texColor;               // linear color, resp. if the texture has been uint8 and readmode set to use sRGB, then sRGB.
+      state.albedo *= powf(texColor, 1.8f); // sRGB gamma correction done manually.
   }
  
   // Only the last diffuse hit is tracked for multiple importance sampling of implicit light hits.
@@ -238,7 +345,7 @@ extern "C" __global__ void __closesthit__radiance()
 
   // Sample a new path direction. 
   const int indexBSDF = NUM_LENS_SHADERS + NUM_LIGHT_TYPES + material.indexBSDF * 2;
-
+  
   optixDirectCall<void, MaterialDefinition const&, State const&, PerRayData*>(indexBSDF, material, state, thePrd);
 
 #if USE_NEXT_EVENT_ESTIMATION
@@ -282,16 +389,17 @@ extern "C" __global__ void __closesthit__radiance()
 
         if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
         {
-          if (thePrd->flags & FLAG_VOLUME) // Supporting nested materials includes having lights inside a volume.
-          {
-            // Calculate the transmittance along the light sample's distance in case it's inside a volume.
-            // The light must be in the same volume or it would have been shadowed.
-            lightSample.emission *= expf(-lightSample.distance * thePrd->sigma_t);
-          }
+            if (thePrd->flags & FLAG_VOLUME) // Supporting nested materials includes having lights inside a volume.
+            {
+                // Calculate the transmittance along the light sample's distance in case it's inside a volume.
+                // The light must be in the same volume or it would have been shadowed.
+                lightSample.emission *= expf(-lightSample.distance * thePrd->sigma_t);
+            }
 
-          const float weightMis = powerHeuristic(lightSample.pdf, bsdf_pdf.w);
-            
-          thePrd->radiance += make_float3(bsdf_pdf) * lightSample.emission * (weightMis * dot(lightSample.direction, state.normal) / lightSample.pdf);
+            const float weightMis = powerHeuristic(lightSample.pdf, bsdf_pdf.w);
+
+            //thePrd->radiance += make_float3(bsdf_pdf) * lightSample.emission * (weightMis / lightSample.pdf); //lightSample.pdf);
+            thePrd->radiance += make_float3(bsdf_pdf) * lightSample.emission * (weightMis  /*dot(lightSample.direction, state.normal)*/ / lightSample.pdf);
         }
       }
     }

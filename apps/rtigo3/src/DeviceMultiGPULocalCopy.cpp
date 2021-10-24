@@ -103,7 +103,7 @@ void DeviceMultiGPULocalCopy::synchronizeStream()
   CU_CHECK( cuStreamSynchronize(m_cudaStream) );
 }
 
-void DeviceMultiGPULocalCopy::render(const unsigned int iterationIndex, void** buffer)
+void DeviceMultiGPULocalCopy::render(const unsigned int iterationIndex, void** buffer, void** varbuffer)
 {
   activateContext();
 
@@ -116,7 +116,7 @@ void DeviceMultiGPULocalCopy::render(const unsigned int iterationIndex, void** b
     {
       // Only allocate the host buffer on one device.
       m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
-
+      m_varbufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
       // These are synchronous.
       // Note that this requires that all other devices have finished accessing this buffer, but that is automatically the case
       // after calling Device::setState() which is the only place which can change the resolution.
@@ -125,6 +125,12 @@ void DeviceMultiGPULocalCopy::render(const unsigned int iterationIndex, void** b
 
       *buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Set the pointer, so that other devices don't allocate it. It's not shared!
 
+
+      CU_CHECK(cuMemFree(m_systemData.varianceBuffer));
+      CU_CHECK(cuMemAlloc(&m_systemData.varianceBuffer, sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y));
+
+      *varbuffer = reinterpret_cast<void*>(m_systemData.varianceBuffer); // Set the pointer, so that other devices don't allocate it. It's not shared!
+      
       // This is a temporary buffer on the primary board which is used by the compositor. The texelBuffer needs to stay intact for the accumulation.
       CU_CHECK( cuMemFree(m_systemData.tileBuffer) );
       CU_CHECK( cuMemAlloc(&m_systemData.tileBuffer, sizeof(float4) * m_launchWidth * m_systemData.resolution.y) );
@@ -271,6 +277,20 @@ const void* DeviceMultiGPULocalCopy::getOutputBufferHost()
   return m_bufferHost.data();
 }
 
+const void* DeviceMultiGPULocalCopy::getOutputVarBufferHost()
+{
+    activateContext();
+
+    MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer); // Only allow this on the device which owns the shared peer-to-peer buffer and resized the host buffer to copy this to the host.
+
+    // Note that the caller takes care to sync the other devices before calling into here or this image might not be complete!
+    CU_CHECK(cuMemcpyDtoHAsync(m_varbufferHost.data(), m_systemData.varianceBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+
+    synchronizeStream(); // Wait for the buffer to arrive on the host.
+
+    return m_varbufferHost.data();
+}
+
 
 void DeviceMultiGPULocalCopy::compositor(Device* other)
 {
@@ -300,6 +320,7 @@ void DeviceMultiGPULocalCopy::compositor(Device* other)
   CompositorData compositorData; // DAR FIXME This needs to be persistent per Device to allow async copies!
 
   compositorData.outputBuffer = m_systemData.outputBuffer;
+  compositorData.varianceBuffer = m_systemData.varianceBuffer;
   compositorData.tileBuffer   = m_systemData.tileBuffer;
   compositorData.resolution   = m_systemData.resolution;
   compositorData.tileSize     = m_systemData.tileSize;

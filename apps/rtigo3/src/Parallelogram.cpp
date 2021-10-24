@@ -48,7 +48,7 @@ namespace sg
     m_attributes.clear();
     m_indices.clear();
 
-    TriangleAttributes attrib;
+    VertexAttributes attrib;
 
     // Same for all four vertices in this parallelogram.
     attrib.tangent  = normalize(vecU);

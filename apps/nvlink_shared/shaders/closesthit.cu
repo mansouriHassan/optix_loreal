@@ -180,7 +180,7 @@ extern "C" __global__ void __closesthit__radiance()
     // Means geometric normal and shading normal are always defined on the side currently looked at.
     // This gives the backfaces of opaque BSDFs a defined result.
     state.normalGeo = -state.normalGeo;
-    state.tangent   = -state.tangent;
+    //state.tangent   = -state.tangent;
     state.normal    = -state.normal;
     // Explicitly DO NOT recalculate the frontface condition!
   }
@@ -205,6 +205,9 @@ extern "C" __global__ void __closesthit__radiance()
       // If it's an implicit light hit from a diffuse scattering event and the light emission was not returning a zero pdf (e.g. backface or edge on).
       if ((thePrd->flags & FLAG_DIFFUSE) && DENOMINATOR_EPSILON < lightPdf)
       {
+        // The light.areaId buffer and light.area are always present on mesh lights.
+        //pdf *= light.areaId[thePrimitiveIndex] / light.area; // This is not needed for parallelogram lights, the primitive area is the light area.
+
         // Scale the emission with the power heuristic between the initial BSDF sample pdf and this implicit light sample pdf.
         emission *= powerHeuristic(thePrd->pdf, lightPdf);
       }

@@ -48,13 +48,15 @@ public:
 
   void activateContext();
   void synchronizeStream();
-  void render(const unsigned int iterationIndex, void** buffer);
+  void render(const unsigned int iterationIndex, void** buffer, void** varbuffer = nullptr);
   void updateDisplayTexture();
   const void* getOutputBufferHost();
+  const void* getOutputVarBufferHost();
 
 private:
   CUgraphicsResource  m_cudaGraphicsResource; // The handle for the registered OpenGL PBO when using interop.
   std::vector<float4> m_bufferHost;
+  std::vector<float4> m_varbufferHost;
 };
 
 #endif // DEVICE_SINGLE_GPU_H

@@ -68,6 +68,20 @@ namespace sg
     m_children.push_back(instance);
   }
 
+  void Group::removeCurvesChild()
+  {
+      for (size_t i = 0; i < getNumChildren(); ++i)
+      {
+          if (m_children[i]->getType() == sg::NodeType::NT_INSTANCE && m_children[i]->getChild()->getType() == sg::NodeType::NT_CURVES)
+          {
+              m_children.erase(m_children.begin()+i);
+              removeCurvesChild();
+              break;
+          }
+      }
+      //m_children.clear();
+  }
+
   size_t Group::getNumChildren() const
   {
     return m_children.size();
@@ -157,13 +171,14 @@ namespace sg
     return NT_TRIANGLES;
   }
 
-  void Triangles::setAttributes(std::vector<TriangleAttributes> const& attributes)
+
+  void Triangles::setAttributes(std::vector<VertexAttributes> const& attributes)
   {
     m_attributes.resize(attributes.size());
-    memcpy(m_attributes.data(), attributes.data(), sizeof(TriangleAttributes) * attributes.size());
+    memcpy(m_attributes.data(), attributes.data(), sizeof(VertexAttributes) * attributes.size());
   }
 
-  std::vector<TriangleAttributes> const& Triangles::getAttributes() const
+  std::vector<VertexAttributes> const& Triangles::getAttributes() const
   {
     return m_attributes;
   }

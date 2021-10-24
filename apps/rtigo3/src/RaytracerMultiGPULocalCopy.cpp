@@ -74,10 +74,10 @@ RaytracerMultiGPULocalCopy::RaytracerMultiGPULocalCopy(const int devicesMask,
     ++ordinal;
   }
 
-  // RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY doesn't strictly require NVLINK peer-to-peer access.
+  // RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY doesn't require NVLINK peer-to-peer access.
   // It's using cuMemcpyPeer to copy the data to the device doing the compositing and will work either way,
-  // just that copy gets faster if it can be done via an NVLINK connection in a peer-to-peer island.
-  (void) enablePeerAccess();
+  // just faster when there is only one peer-to-peer island.
+  enablePeerAccess(); // This can only return false for the RS_INTERACTIVE_MULTI_GPU_PEER_ACCESS strategy so far.
 
   m_isValid = !m_activeDevices.empty();
 }
@@ -104,12 +104,13 @@ unsigned int RaytracerMultiGPULocalCopy::render()
   if (m_iterationIndex < m_samplesPerPixel)
   {
     void* buffer = nullptr;
+    void* varbuffer = nullptr;
     
     // Make sure the OpenGL device is allocating the full resolution backing storage.
     if (m_deviceOGL != -1)
     {
       // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO or Texture
-      m_activeDevices[m_deviceOGL]->render(m_iterationIndex, &buffer); // Interactive rendering. All devices work on the same iteration index.
+      m_activeDevices[m_deviceOGL]->render(m_iterationIndex, &buffer, &varbuffer); // Interactive rendering. All devices work on the same iteration index.
     }
 
     for (size_t i = 0; i < m_activeDevices.size(); ++i)
@@ -117,7 +118,7 @@ unsigned int RaytracerMultiGPULocalCopy::render()
       if (m_deviceOGL != i)
       {
         // If buffer is still nullptr here, the first device will allocate the full resolution buffer.
-        m_activeDevices[i]->render(m_iterationIndex, &buffer);
+        m_activeDevices[i]->render(m_iterationIndex, &buffer, &varbuffer);
       }
     }
     
@@ -170,4 +171,25 @@ const void* RaytracerMultiGPULocalCopy::getOutputBufferHost()
   
   // The full outputBuffer resides on device "index" and the host buffer is also only resized by that device.
   return m_activeDevices[index]->getOutputBufferHost();
+}
+
+const void* RaytracerMultiGPULocalCopy::getOutputVarBufferHost()
+{
+    // Same initial steps to fill the outputBuffer on the primary device as in updateDisplayTexture() 
+    const int index = (m_deviceOGL != -1) ? m_deviceOGL : 0; // Destination device.
+
+    // First, copy the texelBuffer of the primary device into its tileBuffer and then place the tiles into the outputBuffer.
+    m_activeDevices[index]->compositor(m_activeDevices[index]);
+
+    // Now copy the other devices' texelBuffers over to the main tileBuffer and repeat the compositing for that other device.
+    for (size_t i = 0; i < m_activeDevices.size(); ++i)
+    {
+        if (m_deviceOGL != i)
+        {
+            m_activeDevices[index]->compositor(m_activeDevices[i]);
+        }
+    }
+
+    // The full outputBuffer resides on device "index" and the host buffer is also only resized by that device.
+    return m_activeDevices[index]->getOutputVarBufferHost();
 }

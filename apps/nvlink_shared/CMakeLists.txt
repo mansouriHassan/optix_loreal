@@ -32,22 +32,16 @@ message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(OptiX7 REQUIRED)
 find_package(CUDA 10.0 REQUIRED)
 find_package(DevIL_1_8_0 REQUIRED)
 find_package(ASSIMP REQUIRED)
 
-# OptiX SDK 7.x versions are searched inside the top-level CMakeLists.txt.
-# Make the build work with either OptiX 7.3.0, 7.2.0, 7.1.0 or 7.0.0 releases
-if (OptiX73_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX73_INCLUDE_DIR}")
-elseif (OptiX72_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX72_INCLUDE_DIR}")
+# Make the build work with either OptiX 7.0.0 and 7.1.0 releases
+if (OptiX7_FOUND)
+  set(OPTIX_INCLUDE_DIR "${OPTIX7_INCLUDE_DIR}")
 elseif(OptiX71_FOUND)
   set(OPTIX_INCLUDE_DIR "${OPTIX71_INCLUDE_DIR}")
-elseif(OptiX7_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX7_INCLUDE_DIR}")
-else()
-  message(FATAL_ERROR "No OptiX SDK 7.x found.")
 endif()
 #message("OPTIX_INCLUDE_DIR = " "${OPTIX_INCLUDE_DIR}")
 
@@ -90,7 +84,6 @@ set( HEADERS
   inc/Device.h
   inc/MaterialGUI.h
   inc/MyAssert.h
-  inc/NVMLImpl.h
   inc/Options.h
   inc/Parser.h
   inc/Picture.h
@@ -110,7 +103,6 @@ set( SOURCES
   src/Camera.cpp
   src/Device.cpp
   src/main.cpp
-  src/NVMLImpl.cpp
   src/Options.cpp
   src/Parallelogram.cpp
   src/Parser.cpp
@@ -161,11 +153,12 @@ set( SHADERS_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vertex_attributes.h
 )
 
+# Generate code for the lowest Maxwell SM 5.0 target.
 NVCUDA_COMPILE_PTX( SOURCES ${SHADERS}
                     DEPENDENCIES ${SHADERS_HEADERS}
                     TARGET_PATH "${PTX_TARGET_DIR}/nvlink_shared_core"
                     GENERATED_FILES PTX_SOURCES
-                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
                   )
 
 source_group( "imgui"           FILES ${IMGUI} )

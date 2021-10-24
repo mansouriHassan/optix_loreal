@@ -28,9 +28,10 @@
 
 #pragma once
 
-#ifndef CAMERA_H
-#define CAMERA_H
+#ifndef PINHOLE_CAMERA_H
+#define PINHOLE_CAMERA_H
 
+// Always include this before any OptiX headers.
 #include <cuda_runtime.h>
 
 
@@ -53,7 +54,13 @@ public:
 
   bool  getFrustum(float3& p, float3& u, float3& v, float3& w, bool force = false);
   float getAspectRatio() const;
-  void  markDirty();
+  void  markDirty(bool isPOV = false);
+
+  void setPhi(float phi);
+  float getPhi();
+
+  void setTheta(float phi);
+  float getTheta();
   
 public: // public just to be able to load and save them easily.
   float3 m_center;   // Center of interest point, around which is orbited (and the sharp plane of a depth of field camera).
@@ -61,6 +68,7 @@ public: // public just to be able to load and save them easily.
   float  m_phi;      // Range [0.0f, 1.0f] from positive x-axis 360 degrees around the latitudes.
   float  m_theta;    // Range [0.0f, 1.0f] from negative to positive y-axis.
   float  m_fov;      // In degrees. Default is 60.0f
+  int pov;
 
 private:
   bool setDelta(int x, int y);
@@ -77,6 +85,7 @@ private:
   int  m_dx;
   int  m_dy;
   bool m_changed;
+  bool m_changedbyPOV;
 
   float3 m_cameraP;
   float3 m_cameraU;
@@ -84,4 +93,4 @@ private:
   float3 m_cameraW;
 };
 
-#endif // CAMERA_H
+#endif // PINHOLE_CAMERA_H

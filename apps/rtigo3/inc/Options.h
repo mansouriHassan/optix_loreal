@@ -46,6 +46,13 @@ public:
   int         getMode() const;
   std::string getSystem() const;
   std::string getScene() const;
+  void addCommand(std::string newCmdLine) const;
+
+  void        setWidth(int);
+  void        setHeight(int);
+  void        setMode(int);
+  void setSystem(std::string);
+  void setScene(std::string);
 
 private:
   void printUsage(std::string const& argv);

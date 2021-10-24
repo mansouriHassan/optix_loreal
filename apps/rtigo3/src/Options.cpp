@@ -29,10 +29,10 @@
 #include "inc/Options.h"
 
 #include <iostream>
-
+#include <fstream>
 Options::Options()
-: m_width(512)
-, m_height(512)
+: m_width(1400)
+, m_height(900)
 , m_mode(0)
 {
 }
@@ -137,6 +137,36 @@ std::string Options::getScene() const
   return m_filenameScene;
 }
 
+void Options::setWidth(int width)
+{
+    m_width = width;
+}
+
+void Options::setHeight(int height)
+{
+    m_height = height;
+}
+
+void Options::setMode(int mode)
+{
+    m_mode = mode;
+}
+
+void Options::setSystem(const std::string filenamesystem)
+{
+    m_filenameSystem = filenamesystem;
+}
+void Options::setScene(const std::string filenamescene)
+{
+    m_filenameScene = filenamescene;
+}
+
+void Options::addCommand(std::string newCmdLine) const
+{
+    std::ofstream i_writeCmd(m_filenameScene.c_str(), std::ios::app);
+    i_writeCmd << "\n" << newCmdLine;
+    i_writeCmd.close();
+}
 
 void Options::printUsage(std::string const& argv0)
 {
@@ -144,8 +174,8 @@ void Options::printUsage(std::string const& argv0)
   std::cerr <<
     "App Options:\n"
     "   ? | help | --help       Print this usage message and exit.\n"
-    "  -w | --width <int>       Width of the client window  (512) \n"
-    "  -h | --height <int>      Height of the client window (512)\n"
+    "  -w | --width <int>       Width of the client window  (720) \n"
+    "  -h | --height <int>      Height of the client window (720)\n"
     "  -m | --mode <int>        0 = interactive, 1 == benchmark (0)\n"
     "  -s | --system <filename> Filename for system options (empty).\n"
     "  -d | --desc   <filename> Filename for scene description (empty).\n"

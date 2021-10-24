@@ -581,7 +581,7 @@ void Application::getSystemInformation()
     std::cout << "Device " << device << ": " << name << '\n';
 
     DeviceAttribute attr = {};
-
+    
     CU_CHECK( cuDeviceGetAttribute(&attr.maxThreadsPerBlock, CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, device) );
     CU_CHECK( cuDeviceGetAttribute(&attr.maxBlockDimX, CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X, device) );
     CU_CHECK( cuDeviceGetAttribute(&attr.maxBlockDimY, CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y, device) );
@@ -837,15 +837,14 @@ bool Application::initOptiX()
 
   CUdevice device = 0;
 
-  cuRes = cuCtxCreate(&m_cudaContext, CU_CTX_SCHED_SPIN, device); // DEBUG What is the best CU_CTX_SCHED_* setting here.
+  cuRes = cuCtxCreate(&m_cudaContext, CU_CTX_SCHED_SPIN, device); // DAR DEBUG What is the best CU_CTX_SCHED_* setting here.
   if (cuRes != CUDA_SUCCESS)
   {
     std::cerr << "ERROR: initOptiX() cuCtxCreate() failed: " << cuRes << '\n';
     return false;
   }
 
-  // PERF Use CU_STREAM_NON_BLOCKING if there is any work running in parallel on multiple streams.
-  cuRes = cuStreamCreate(&m_cudaStream, CU_STREAM_DEFAULT);
+  cuRes = cuStreamCreate(&m_cudaStream, CU_STREAM_DEFAULT); // DAR PERF Use CU_STREAM_NON_BLOCKING if there is any work running in parallel on multiple streams.
   if (cuRes != CUDA_SUCCESS)
   {
     std::cerr << "ERROR: initOptiX() cuStreamCreate() failed: " << cuRes << '\n';
@@ -860,7 +859,7 @@ bool Application::initOptiX()
   }
 
   OptixDeviceContextOptions options = {};
-
+  
   options.logCallbackFunction = &Logger::callback;
   options.logCallbackData     = &m_logger;
   options.logCallbackLevel    = 4;
@@ -917,25 +916,19 @@ bool Application::render()
     OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, (CUdeviceptr) m_d_systemParameter, sizeof(SystemParameter), &m_sbt, m_width, m_height, /* depth */ 1) );
 
     // Calculate the intensity on the outputBuffer data.
-#if (OPTIX_VERSION >= 70300)
-    OPTIX_CHECK( m_api.optixDenoiserComputeIntensity(m_denoiser, m_cudaStream, &m_layer.input, m_paramsDenoiser.hdrIntensity,
-                                                     m_d_scratchDenoiser, m_sizesDenoiser.withoutOverlapScratchSizeInBytes) );
-#elif (OPTIX_VERSION >= 70100)
-    OPTIX_CHECK( m_api.optixDenoiserComputeIntensity(m_denoiser, m_cudaStream, &m_inputImage[0], m_paramsDenoiser.hdrIntensity,
-                                                     m_d_scratchDenoiser, m_sizesDenoiser.withoutOverlapScratchSizeInBytes) );
-#else // (OPTIX_VERSION == 70000)
+#if (OPTIX_VERSION == 70000)
     OPTIX_CHECK( m_api.optixDenoiserComputeIntensity(m_denoiser, m_cudaStream, &m_inputImage[0], m_paramsDenoiser.hdrIntensity,
                                                      m_d_scratchDenoiser, m_sizesDenoiser.recommendedScratchSizeInBytes) );
+#else // (OPTIX_VERSION >= 70100)
+    OPTIX_CHECK( m_api.optixDenoiserComputeIntensity(m_denoiser, m_cudaStream, &m_inputImage[0], m_paramsDenoiser.hdrIntensity,
+                                                     m_d_scratchDenoiser, m_sizesDenoiser.withoutOverlapScratchSizeInBytes) );
 #endif
+
 
     //float hdrIntensity = 0.0f;
-    //CU_CHECK( cuMemcpyDtoH(&hdrIntensity, m_paramsDenoiser.hdrIntensity, sizeof(float)) ); // DEBUG 
+    //CU_CHECK( cuMemcpyDtoH(&hdrIntensity, m_paramsDenoiser.hdrIntensity, sizeof(float)) ); // DAR DEBUG 
 
-#if (OPTIX_VERSION >= 70300)
-    m_layer.output.data = m_d_denoisedBuffer; // If the denoised buffer is GPU local memory.
-#else
     m_outputImage.data = m_d_denoisedBuffer; // If the denoised buffer is GPU local memory.
-#endif
 
     if (m_interop)
     {
@@ -945,37 +938,21 @@ bool Application::render()
       CU_CHECK( cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream) ); // This is an implicit synchronizeStream!
       CU_CHECK( cuGraphicsResourceGetMappedPointer(&m_d_denoisedBuffer, &size, m_cudaGraphicsResource) ); // The pointer can change on every map!
 
-#if (OPTIX_VERSION >= 70300)
-      m_layer.output.data = m_d_denoisedBuffer; // Here the denoised buffer is the interop PBO and must be set after the mapping!
-
-      OPTIX_CHECK( m_api.optixDenoiserInvoke(m_denoiser, m_cudaStream, &m_paramsDenoiser,
-                                             m_d_stateDenoiser, m_sizesDenoiser.stateSizeInBytes,
-                                             &m_guideLayer, &m_layer, m_numInputLayers, 0, 0, // OptiX 7.3 has m_numInputLayers == 1 here.
-                                             m_d_scratchDenoiser, m_scratchSizeInBytes) );
-#else
       m_outputImage.data = m_d_denoisedBuffer; // Here the denoised buffer is the interop PBO and must be set after the mapping!
 
       OPTIX_CHECK( m_api.optixDenoiserInvoke(m_denoiser, m_cudaStream, &m_paramsDenoiser,
                                              m_d_stateDenoiser, m_sizesDenoiser.stateSizeInBytes,
                                              &m_inputImage[0], m_numInputLayers, 0, 0, &m_outputImage,
                                              m_d_scratchDenoiser, m_scratchSizeInBytes) );
-#endif
 
       CU_CHECK( cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream) ); // This is an implicit synchronizeStream!
     }
     else
     {
-#if (OPTIX_VERSION >= 70300)
-      OPTIX_CHECK( m_api.optixDenoiserInvoke(m_denoiser, m_cudaStream, &m_paramsDenoiser,
-                                             m_d_stateDenoiser, m_sizesDenoiser.stateSizeInBytes,
-                                             &m_guideLayer, &m_layer, m_numInputLayers, 0, 0, // OptiX 7.3 has m_numInputLayers == 1 here.
-                                             m_d_scratchDenoiser, m_scratchSizeInBytes) );
-#else
       OPTIX_CHECK( m_api.optixDenoiserInvoke(m_denoiser, m_cudaStream, &m_paramsDenoiser,
                                              m_d_stateDenoiser, m_sizesDenoiser.stateSizeInBytes,
                                              &m_inputImage[0], m_numInputLayers, 0, 0, &m_outputImage,
                                              m_d_scratchDenoiser, m_scratchSizeInBytes) );
-#endif
     }
   }
 
@@ -1062,8 +1039,8 @@ void Application::display()
 
 void Application::checkInfoLog(const char *msg, GLuint object)
 {
-  GLint  maxLength;
-  GLint  length;
+  GLint maxLength;
+  GLint length;
   GLchar *infoLog;
 
   if (glIsProgram(object))
@@ -1318,7 +1295,7 @@ void Application::guiWindow()
   {
     bool changed = false;
 
-    // HACK The last material is a black specular reflection for the area light and not editable
+    // DAR HACK The last material is a black specular reflection for the area light and not editable
     // because this example does not support explicit light sampling of textured or cutout opacity geometry.
     for (int i = 0; i < int(m_guiMaterialParameters.size()) - 1; ++i)
     {
@@ -1348,7 +1325,7 @@ void Application::guiWindow()
         if (ImGui::Checkbox("Thin-Walled", &parameters.thinwalled)) // Set this to true when using cutout opacity. Refracting materials won't look right with cutouts otherwise.
         {
           changed = true;
-        }
+        }	
         // Only show material parameters for the BSDFs which are affected.
         if (parameters.indexBSDF == INDEX_BSDF_SPECULAR_REFLECTION_TRANSMISSION)
         {
@@ -1531,15 +1508,13 @@ OptixTraversableHandle Application::createGeometry(std::vector<VertexAttributes>
   
   OPTIX_CHECK( m_api.optixAccelComputeMemoryUsage(m_context, &accelBuildOptions, &triangleInput, 1, &accelBufferSizes) );
 
-  CUdeviceptr d_gas; // This holds the geometry acceleration structure.
-
-  CU_CHECK( cuMemAlloc(&d_gas, accelBufferSizes.outputSizeInBytes) );
-
   CUdeviceptr d_tmp;
-
-  CU_CHECK( cuMemAlloc(&d_tmp, accelBufferSizes.tempSizeInBytes) ); // Allocate temporary buffers last to reduce fragmentation.
+  CUdeviceptr d_gas; // This hold the acceleration structure.
 
   OptixTraversableHandle traversableHandle = 0; // This is the handle which gets returned.
+
+  CU_CHECK( cuMemAlloc(&d_tmp, accelBufferSizes.tempSizeInBytes) );
+  CU_CHECK( cuMemAlloc(&d_gas, accelBufferSizes.outputSizeInBytes) );
 
   OPTIX_CHECK( m_api.optixAccelBuild(m_context, m_cudaStream, 
                                      &accelBuildOptions, &triangleInput, 1,
@@ -1596,7 +1571,7 @@ void Application::updateMaterialParameters()
 
   std::vector<MaterialParameter> materialParameters(m_guiMaterialParameters.size());
 
-  // PERF This could be made faster for GUI interactions on scenes with very many materials when really only copying the changed values.
+  // DAR PERF This could be made faster for GUI interactions on scenes with very many materials when really only copying the changed values.
   for (size_t i = 0; i < m_guiMaterialParameters.size(); ++i)
   {
     MaterialParameterGUI& src = m_guiMaterialParameters[i]; // GUI layout.
@@ -1648,7 +1623,6 @@ void Application::initMaterials()
   // Setup GUI material parameters, one for each of the implemented BSDFs.
   MaterialParameterGUI parameters;
 
-  // The order in this array matches the instance ID in the root IAS!
   // Lambert material for the floor.
   parameters.indexBSDF           = INDEX_BSDF_DIFFUSE_REFLECTION; // Index for the direct callables.
   parameters.albedo              = make_float3(0.5f); // Grey. Modulates the albedo texture.
@@ -1724,7 +1698,7 @@ void Application::initPipeline()
 
   // INSTANCES
 
-  OptixInstance instance = {};
+  OptixInstance instance;
 
   OptixTraversableHandle geoPlane = createPlane(1, 1, 1);
 
@@ -1840,25 +1814,24 @@ void Application::initPipeline()
   CU_CHECK( cuMemcpyHtoD(d_instances, m_instances.data(), instancesSizeInBytes) );
 
   OptixBuildInput instanceInput = {};
-
+  
   instanceInput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
   instanceInput.instanceArray.instances    = d_instances;
   instanceInput.instanceArray.numInstances = (unsigned int) m_instances.size();
 
   OptixAccelBuildOptions accelBuildOptions = {};
-
+  
   accelBuildOptions.buildFlags = OPTIX_BUILD_FLAG_NONE;
   accelBuildOptions.operation  = OPTIX_BUILD_OPERATION_BUILD;
   
-  OptixAccelBufferSizes iasBufferSizes = {};
+  OptixAccelBufferSizes iasBufferSizes;
 
   OPTIX_CHECK( m_api.optixAccelComputeMemoryUsage(m_context, &accelBuildOptions, &instanceInput, 1, &iasBufferSizes) );
 
-  CU_CHECK( cuMemAlloc(&m_d_ias, iasBufferSizes.outputSizeInBytes ) );
-
   CUdeviceptr d_tmp;
   
-  CU_CHECK( cuMemAlloc(&d_tmp,   iasBufferSizes.tempSizeInBytes) ); // Allocate temporary buffers last to reduce fragmentation.
+  CU_CHECK( cuMemAlloc(&d_tmp,   iasBufferSizes.tempSizeInBytes) );
+  CU_CHECK( cuMemAlloc(&m_d_ias, iasBufferSizes.outputSizeInBytes ) );
 
   OPTIX_CHECK( m_api.optixAccelBuild(m_context, m_cudaStream,
                                      &accelBuildOptions, &instanceInput, 1,
@@ -1876,13 +1849,14 @@ void Application::initPipeline()
 
   OptixModuleCompileOptions moduleCompileOptions = {};
 
-  moduleCompileOptions.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT; // No explicit register limit.
 #if USE_MAX_OPTIMIZATION
-  moduleCompileOptions.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // All optimizations, is the default.
-  moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO; // Keep generated line info for Nsight Compute profiling. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
+  moduleCompileOptions.maxRegisterCount = 0;                                  // No explicit register limit.
+  moduleCompileOptions.optLevel         = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // All optimizations, is the default.
+  moduleCompileOptions.debugLevel       = OPTIX_COMPILE_DEBUG_LEVEL_NONE;     // Use OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO for performance analysis.
 #else // DEBUG
-  moduleCompileOptions.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
-  moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+  moduleCompileOptions.maxRegisterCount = 0;
+  moduleCompileOptions.optLevel         = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+  moduleCompileOptions.debugLevel       = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #endif
 
   OptixPipelineCompileOptions pipelineCompileOptions = {};
@@ -1983,7 +1957,7 @@ void Application::initPipeline()
   OPTIX_CHECK( m_api.optixModuleCreateFromPTX(m_context, &moduleCompileOptions, &pipelineCompileOptions, ptxAnyhit.c_str(),     ptxAnyhit.size(),     nullptr, nullptr, &moduleAnyhit) );
 
   OptixProgramGroupDesc programGroupDescHitRadiance = {};
- 
+  
   programGroupDescHitRadiance.kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   programGroupDescHitRadiance.flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
   programGroupDescHitRadiance.hitgroup.moduleCH            = moduleClosesthit;
@@ -2018,13 +1992,12 @@ void Application::initPipeline()
   OPTIX_CHECK( m_api.optixProgramGroupCreate(m_context, &programGroupDescMissShadow, 1, &programGroupOptions, nullptr, nullptr, &programGroupMissShadow ) );
 
   OptixProgramGroupDesc programGroupDescHitShadow = {};
-
+  OptixProgramGroupDesc programGroupDescHitShadowCutout = {};
+  
   programGroupDescHitShadow.kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   programGroupDescHitShadow.flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
   programGroupDescHitShadow.hitgroup.moduleAH            = moduleAnyhit;
   programGroupDescHitShadow.hitgroup.entryFunctionNameAH = "__anyhit__shadow";
-
-  OptixProgramGroupDesc programGroupDescHitShadowCutout = {};
 
   programGroupDescHitShadowCutout.kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   programGroupDescHitShadowCutout.flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
@@ -2133,17 +2106,20 @@ void Application::initPipeline()
   
   OptixPipelineLinkOptions pipelineLinkOptions = {};
 
-  pipelineLinkOptions.maxTraceDepth = 2;
+  pipelineLinkOptions.maxTraceDepth          = 2;
 #if USE_MAX_OPTIMIZATION
-  pipelineLinkOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO; // Keep generated line info for Nsight Compute profiling. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
+  pipelineLinkOptions.debugLevel             = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 #else // DEBUG
-  pipelineLinkOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+  pipelineLinkOptions.debugLevel             = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+#endif
+#if (OPTIX_VERSION == 70000)
+  pipelineLinkOptions.overrideUsesMotionBlur = 0; // Does not exist in OptiX 7.1.0.
 #endif
 
   OPTIX_CHECK( m_api.optixPipelineCreate(m_context, &pipelineCompileOptions, &pipelineLinkOptions, programGroups.data(), (unsigned int) programGroups.size(), nullptr, nullptr, &m_pipeline) );
 
   // STACK SIZES
-
+  
   OptixStackSizes stackSizesPipeline = {};
 
   for (size_t i = 0; i < programGroups.size(); ++i)
@@ -2162,18 +2138,15 @@ void Application::initPipeline()
   }
   
   // Temporaries
-  const unsigned int cssCCTree           = stackSizesPipeline.cssCC; // Should be 0. No continuation callables in this pipeline. // maxCCDepth == 0
-  const unsigned int cssCHOrMSPlusCCTree = std::max(stackSizesPipeline.cssCH, stackSizesPipeline.cssMS) + cssCCTree;
+  unsigned int cssCCTree           = stackSizesPipeline.cssCC; // Should be 0. No continuation callables in this pipeline. // maxCCDepth == 0
+  unsigned int cssCHOrMSPlusCCTree = std::max(stackSizesPipeline.cssCH, stackSizesPipeline.cssMS) + cssCCTree;
 
   // Arguments
-  const unsigned int directCallableStackSizeFromTraversal = stackSizesPipeline.dssDC; // maxDCDepth == 1 // FromTraversal: DC is invoked from IS or AH.      // Possible stack size optimizations.
-  const unsigned int directCallableStackSizeFromState     = stackSizesPipeline.dssDC; // maxDCDepth == 1 // FromState:     DC is invoked from RG, MS, or CH. // Possible stack size optimizations.
-  const unsigned int continuationStackSize = stackSizesPipeline.cssRG + cssCCTree + cssCHOrMSPlusCCTree * (std::max(1u, pipelineLinkOptions.maxTraceDepth) - 1u) +
-                                             std::min(1u, pipelineLinkOptions.maxTraceDepth) * std::max(cssCHOrMSPlusCCTree, stackSizesPipeline.cssAH + stackSizesPipeline.cssIS);
-  // "The maxTraversableGraphDepth responds to the maximum number of traversables visited when calling optixTrace. 
-  // Every acceleration structure and motion transform count as one level of traversal."
-  // Render Graph is at maximum: IAS -> GAS
-  const unsigned int maxTraversableGraphDepth = 2;
+  unsigned int directCallableStackSizeFromTraversal = stackSizesPipeline.dssDC; // maxDCDepth == 1 // FromTraversal: DC is invoked from IS or AH.      // Possible stack size optimizations.
+  unsigned int directCallableStackSizeFromState     = stackSizesPipeline.dssDC; // maxDCDepth == 1 // FromState:     DC is invoked from RG, MS, or CH. // Possible stack size optimizations.
+  unsigned int continuationStackSize = stackSizesPipeline.cssRG + cssCCTree + cssCHOrMSPlusCCTree * (std::max(1u, pipelineLinkOptions.maxTraceDepth) - 1u) +
+                                       std::min(1u, pipelineLinkOptions.maxTraceDepth) * std::max(cssCHOrMSPlusCCTree, stackSizesPipeline.cssAH + stackSizesPipeline.cssIS);
+  unsigned int maxTraversableGraphDepth = 2;
 
   OPTIX_CHECK( m_api.optixPipelineSetStackSize(m_pipeline, directCallableStackSizeFromTraversal, directCallableStackSizeFromState, continuationStackSize, maxTraversableGraphDepth) );
 
@@ -2417,19 +2390,6 @@ void Application::initDenoiser()
 {
   OptixDenoiserOptions optionsDenoiser = {};
 
-#if (OPTIX_VERSION >= 70300)
-
-#if USE_DENOISER_ALBEDO
-  optionsDenoiser.guideAlbedo = 1;
-#endif
-#if USE_DENOISER_NORMAL
-  optionsDenoiser.guideNormal = 1;
-#endif
-
-  OPTIX_CHECK( m_api.optixDenoiserCreate(m_context, OPTIX_DENOISER_MODEL_KIND_HDR, &optionsDenoiser, &m_denoiser) );
-
-#else // if (OPTIX_VERSION < 70300)
-
   optionsDenoiser.inputKind = OPTIX_DENOISER_INPUT_RGB;
 #if USE_DENOISER_ALBEDO
   optionsDenoiser.inputKind = OPTIX_DENOISER_INPUT_RGB_ALBEDO;
@@ -2444,14 +2404,12 @@ void Application::initDenoiser()
 #else
   optionsDenoiser.pixelFormat = OPTIX_PIXEL_FORMAT_HALF4;
 #endif
-#endif // (OPTIX_VERSION == 70000)
+#endif
 
   OPTIX_CHECK( m_api.optixDenoiserCreate(m_context, &optionsDenoiser, &m_denoiser) );
   
   // Need to set the model to be able to calculate the memory requirements.
   OPTIX_CHECK( m_api.optixDenoiserSetModel(m_denoiser, OPTIX_DENOISER_MODEL_KIND_HDR, nullptr, 0) );
-
-#endif // OPTIX_VERSION
   
   memset(&m_sizesDenoiser, 0, sizeof(OptixDenoiserSizes)); // This structure changed in OptiX 7.1.0.
 
@@ -2473,8 +2431,6 @@ void Application::initDenoiser()
                                         m_d_stateDenoiser,   m_sizesDenoiser.stateSizeInBytes,
                                         m_d_scratchDenoiser, m_scratchSizeInBytes) );
 
-  m_paramsDenoiser = {};  // Make sure all fields are nulled. OptiX 7.2.0 added the field CUdeviceptr hdrAverageColor. 
-
   m_paramsDenoiser.denoiseAlpha = 0;    // Don't touch alpha.
   m_paramsDenoiser.blendFactor  = 0.0f; // Show the denoised image only.
   CU_CHECK( cuMemAlloc(&m_paramsDenoiser.hdrIntensity, sizeof(float)) );
@@ -2490,86 +2446,14 @@ void Application::initDenoiser()
     CU_CHECK( cuMemAlloc(&m_d_denoisedBuffer, sizeBuffers) );
   }
 
-  // Setup the input, output and guide image structures with default data.
+  // Setup the m_inputImage and m_outputImage structures with default data.
   // The actual image data pointers get set inside the render() function.
   setDenoiserImages(); 
 }
 
-
 // This is also called by reshape. 
 void Application::setDenoiserImages()
 {
-#if (OPTIX_VERSION >= 70300)
-  m_layer = {};
-  m_guideLayer = {};
-
-  // Noisy beauty buffer.
-  m_layer.input.data               = m_systemParameter.outputBuffer; // This gets set by the render() function.
-  m_layer.input.width              = m_width;
-  m_layer.input.height             = m_height;
-#if USE_FP32_OUTPUT
-  m_layer.input.rowStrideInBytes   = m_width * sizeof(float4);
-  m_layer.input.pixelStrideInBytes = sizeof(float4);
-  m_layer.input.format             = OPTIX_PIXEL_FORMAT_FLOAT4;
-#else
-  m_layer.input.rowStrideInBytes   = m_width * sizeof(Half4);
-  m_layer.input.pixelStrideInBytes = sizeof(Half4);
-  m_layer.input.format             = OPTIX_PIXEL_FORMAT_HALF4;
-#endif
-
-  // OptiX 7.3 changed the image handling into input and guide layers.
-  // For the HDR dednoiser, the beauty buffer is the only input layer.
-  // Optional albedo and normal layers are inside the guide layers now.
-  m_numInputLayers = 1; 
-
-  // Denoised output buffer.
-  m_layer.output.data               = m_d_denoisedBuffer; // If the denoised buffer is GPU local memory, otherwise set in render() after mapping the PBO.
-  m_layer.output.width              = m_width;
-  m_layer.output.height             = m_height;
-#if USE_FP32_OUTPUT
-  m_layer.output.rowStrideInBytes   = m_width * sizeof(float4);
-  m_layer.output.pixelStrideInBytes = sizeof(float4);
-  m_layer.output.format             = OPTIX_PIXEL_FORMAT_FLOAT4;
-#else
-  m_layer.output.rowStrideInBytes   = m_width * sizeof(Half4);
-  m_layer.output.pixelStrideInBytes = sizeof(Half4);
-  m_layer.output.format             = OPTIX_PIXEL_FORMAT_HALF4;
-#endif
-
-#if USE_DENOISER_ALBEDO
-  // Albedo buffer
-  m_guideLayer.albedo.data               = m_systemParameter.albedoBuffer;
-  m_guideLayer.albedo.width              = m_width;
-  m_guideLayer.albedo.height             = m_height;
-#if USE_FP32_OUTPUT
-  m_guideLayer.albedo.rowStrideInBytes   = m_width * sizeof(float4);
-  m_guideLayer.albedo.pixelStrideInBytes = sizeof(float4);
-  m_guideLayer.albedo.format             = OPTIX_PIXEL_FORMAT_FLOAT4;
-#else
-  m_guideLayer.albedo.rowStrideInBytes   = m_width * sizeof(Half4);
-  m_guideLayer.albedo.pixelStrideInBytes = sizeof(Half4);
-  m_guideLayer.albedo.format             = OPTIX_PIXEL_FORMAT_HALF4;
-#endif
-#endif // USE_DENOISER_ALBEDO
-
-#if USE_DENOISER_NORMAL
-  // Normal buffer
-  m_guideLayer.normal.data               = m_systemParameter.normalBuffer;
-  m_guideLayer.normal.width              = m_width;
-  m_guideLayer.normal.height             = m_height;
-#if USE_FP32_OUTPUT
-  m_guideLayer.normal.rowStrideInBytes   = m_width * sizeof(float4);
-  m_guideLayer.normal.pixelStrideInBytes = sizeof(float4);
-  m_guideLayer.normal.format             = OPTIX_PIXEL_FORMAT_FLOAT4;
-#else
-  m_guideLayer.normal.rowStrideInBytes   = m_width * sizeof(Half4);
-  m_guideLayer.normal.pixelStrideInBytes = sizeof(Half4);
-  m_guideLayer.normal.format             = OPTIX_PIXEL_FORMAT_HALF4;
-#endif
-#endif // USE_DENOISER_NORMAL
-
-#else // if (OPTIX VERSION < 703000)
-
   // Noisy beauty buffer.
   m_inputImage[0].data               = m_systemParameter.outputBuffer; // This gets set by the render() function.
   m_inputImage[0].width              = m_width;
@@ -2632,8 +2516,6 @@ void Application::setDenoiserImages()
   m_outputImage.pixelStrideInBytes = sizeof(Half4);
   m_outputImage.format             = OPTIX_PIXEL_FORMAT_HALF4;
 #endif
-
-#endif // OPTIX_VERSION
 }
 
 
@@ -2703,7 +2585,7 @@ void Application::createLights()
     
     OptixTraversableHandle geoLight = createParallelogram(light.position, light.vecU, light.vecV, light.normal);
 
-    OptixInstance instance = {};
+    OptixInstance instance;
 
     // The geometric light is stored in world coordinates for now.
     const float trafoLight[12] =

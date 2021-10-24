@@ -66,6 +66,9 @@ DeviceMultiGPUPeerAccess::~DeviceMultiGPUPeerAccess()
   if (m_ownsSharedBuffer) // This destruction order requires that all other devices cannot touch this shared buffer anymore.
   {
     CU_CHECK_NO_THROW( cuMemFree(m_systemData.outputBuffer) ); 
+
+    CU_CHECK_NO_THROW(cuMemFree(m_systemData.varianceBuffer));
+    
   }
 }
 
@@ -94,7 +97,7 @@ void DeviceMultiGPUPeerAccess::synchronizeStream()
   CU_CHECK( cuStreamSynchronize(m_cudaStream) );
 }
 
-void DeviceMultiGPUPeerAccess::render(const unsigned int iterationIndex, void** buffer)
+void DeviceMultiGPUPeerAccess::render(const unsigned int iterationIndex, void** buffer, void** varbuffer)
 {
   activateContext();
 
@@ -110,7 +113,7 @@ void DeviceMultiGPUPeerAccess::render(const unsigned int iterationIndex, void** 
       // Only allocate the host buffer on one device. 
       // Only needed for the screenshot functionality and the texture resize below.
       m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
-
+      m_varbufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
       // These are synchronous.
       // Note that this requires that all other devices have finished accessing this buffer, but that is automatically the case
       // when calling Device::setState() which is the only place which can change the resolution.
@@ -119,7 +122,12 @@ void DeviceMultiGPUPeerAccess::render(const unsigned int iterationIndex, void** 
       CU_CHECK( cuMemAlloc(&m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y) );
 
       *buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Make the shared pointer known to the peer devices.
+      
+      CU_CHECK(cuMemFree(m_systemData.varianceBuffer));
+      CU_CHECK(cuMemAlloc(&m_systemData.varianceBuffer, sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y));
 
+      *varbuffer = reinterpret_cast<void*>(m_systemData.varianceBuffer); // Make the shared pointer known to the peer devices.
+      
       m_ownsSharedBuffer = true; // Indicate which device owns the m_systemData.outputBuffer so that only that frees it again.
 
       if (m_cudaGraphicsResource != nullptr) // Need to unregister texture or PBO before resizing it.
@@ -153,6 +161,9 @@ void DeviceMultiGPUPeerAccess::render(const unsigned int iterationIndex, void** 
     else
     {
       m_systemData.outputBuffer = reinterpret_cast<CUdeviceptr>(*buffer); // Use the same shared peer-to-peer buffer for all devices. Only implemented for one peer-to-perr island!
+
+      m_systemData.varianceBuffer = reinterpret_cast<CUdeviceptr>(*varbuffer);
+      
     }
 
     m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
@@ -259,4 +270,18 @@ const void* DeviceMultiGPUPeerAccess::getOutputBufferHost()
   synchronizeStream(); // Wait for the buffer to arrive on the host. Context is created with CU_CTX_SCHED_SPIN.
 
   return m_bufferHost.data();
+}
+
+const void* DeviceMultiGPUPeerAccess::getOutputVarBufferHost()
+{
+    activateContext();
+
+    MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer); // Only allow this on the device which owns the shared peer-to-peer buffer and resized the host buffer to copy this to the host.
+
+    // Note that the caller takes care to sync the other devices before calling into here or this image might not be complete!
+    CU_CHECK(cuMemcpyDtoHAsync(m_varbufferHost.data(), m_systemData.varianceBuffer, sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+
+    synchronizeStream(); // Wait for the buffer to arrive on the host. Context is created with CU_CTX_SCHED_SPIN.
+
+    return m_varbufferHost.data();
 }

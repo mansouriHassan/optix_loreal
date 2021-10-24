@@ -61,6 +61,9 @@ DeviceMultiGPUZeroCopy::~DeviceMultiGPUZeroCopy()
     CU_CHECK_NO_THROW( cuCtxSetCurrent(m_cudaContext) ); 
 
     CU_CHECK_NO_THROW( cuMemFreeHost(reinterpret_cast<void*>(m_systemData.outputBuffer)) );
+   
+    CU_CHECK_NO_THROW(cuMemFreeHost(reinterpret_cast<void*>(m_systemData.varianceBuffer)));
+    
   }
 }
 
@@ -89,54 +92,64 @@ void DeviceMultiGPUZeroCopy::synchronizeStream()
   CU_CHECK( cuStreamSynchronize(m_cudaStream) );
 }
 
-void DeviceMultiGPUZeroCopy::render(const unsigned int iterationIndex, void** buffer)
+void DeviceMultiGPUZeroCopy::render(const unsigned int iterationIndex, void** buffer, void** varbuffer)
 {
-  activateContext();
+    activateContext();
 
-  m_systemData.iterationIndex = iterationIndex;
+    m_systemData.iterationIndex = iterationIndex;
 
-  if (m_isDirtyOutputBuffer)
-  {
-    MY_ASSERT(buffer != nullptr);
-    if (*buffer == nullptr) // The first device called handles the reallocation of the shared pinned memory buffer.
+    if (m_isDirtyOutputBuffer)
     {
-      // Allocate zero-copy pinned memory on the host.
-      CU_CHECK( cuMemFreeHost(reinterpret_cast<void*>(m_systemData.outputBuffer)) );
-      CU_CHECK( cuMemHostAlloc(reinterpret_cast<void**>(&m_systemData.outputBuffer), sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP) );
-      
-      *buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Fill the shared buffer pointer.
+        MY_ASSERT(buffer != nullptr);
+        if (*buffer == nullptr) // The first device called handles the reallocation of the shared pinned memory buffer.
+        {
+            // Allocate zero-copy pinned memory on the host.
+            CU_CHECK(cuMemFreeHost(reinterpret_cast<void*>(m_systemData.outputBuffer)));
+            CU_CHECK(cuMemHostAlloc(reinterpret_cast<void**>(&m_systemData.outputBuffer), sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP));
 
-      m_ownsSharedBuffer = true; // This device will destruct it.
+            *buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Fill the shared buffer pointer.
+
+            
+            // Allocate zero-copy pinned memory on the host.
+            CU_CHECK(cuMemFreeHost(reinterpret_cast<void*>(m_systemData.varianceBuffer)));
+            CU_CHECK(cuMemHostAlloc(reinterpret_cast<void**>(&m_systemData.varianceBuffer), sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP));
+
+            *varbuffer = reinterpret_cast<void*>(m_systemData.varianceBuffer); // Fill the shared buffer pointer.
+            
+            m_ownsSharedBuffer = true; // This device will destruct it.
+        }
+        else
+        {
+            // Use the same zero copy pinned memory buffer for all devices. 
+            // m_systemData.outputBuffer = reinterpret_cast<CUdeviceptr>(*buffer); 
+            // This call results in the same pointer because of CU_MEMHOSTALLOC_PORTABLE.
+            CU_CHECK(cuMemHostGetDevicePointer(&m_systemData.outputBuffer, *buffer, 0));
+            
+            CU_CHECK(cuMemHostGetDevicePointer(&m_systemData.varianceBuffer, *varbuffer, 0));
+            
+        }
+
+        m_isDirtyOutputBuffer = false; // Buffer is allocated with new size,
+        m_isDirtySystemData = true;  // Now the sysData on the device needs to be updated, and that needs a sync!
     }
-    else
+
+    if (m_isDirtySystemData) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.
     {
-      // Use the same zero copy pinned memory buffer for all devices. 
-      // m_systemData.outputBuffer = reinterpret_cast<CUdeviceptr>(*buffer); 
-      // This call results in the same pointer because of CU_MEMHOSTALLOC_PORTABLE.
-      CU_CHECK( cuMemHostGetDevicePointer(&m_systemData.outputBuffer, *buffer, 0) ); 
+        synchronizeStream();
+
+        CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
+        m_isDirtySystemData = false;
+    }
+    else // Just copy the new iterationIndex.
+    {
+        synchronizeStream(); // FIXME For some render strategy "final frame" there should be no synchronizeStream() at all here.
+
+        // FIXME Then for really asynchronous copies of the iteration indices multiple source pointers are required. Good that I know the number of iterations upfront!
+        CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, sizeof(unsigned int), m_cudaStream));
     }
 
-    m_isDirtyOutputBuffer = false; // Buffer is allocated with new size,
-    m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated, and that needs a sync!
-  }
-
-  if (m_isDirtySystemData) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.
-  {
-    synchronizeStream();
-
-    CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream) );
-    m_isDirtySystemData = false;
-  }
-  else // Just copy the new iterationIndex.
-  {
-    synchronizeStream(); // FIXME For some render strategy "final frame" there should be no synchronizeStream() at all here.
-
-    // FIXME Then for really asynchronous copies of the iteration indices multiple source pointers are required. Good that I know the number of iterations upfront!
-    CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, sizeof(unsigned int), m_cudaStream) );
-  }
-
-  // Note the launch width per device to render in tiles.
-  OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1) );
+    // Note the launch width per device to render in tiles.
+    OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 }
 
 void DeviceMultiGPUZeroCopy::updateDisplayTexture()
@@ -163,4 +176,15 @@ const void* DeviceMultiGPUZeroCopy::getOutputBufferHost()
   MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer);
 
   return reinterpret_cast<void*>(m_systemData.outputBuffer); // This buffer is in pinned memory on the host. Just return it.
+}
+
+const void* DeviceMultiGPUZeroCopy::getOutputVarBufferHost()
+{
+    // All other devices have been synced by the RaytracerMultiGPUZeroCopy caller.
+    activateContext();
+    synchronizeStream(); // Wait for the buffer to arrive on the host. 
+
+    MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer);
+
+    return reinterpret_cast<void*>(m_systemData.varianceBuffer); // This buffer is in pinned memory on the host. Just return it.
 }

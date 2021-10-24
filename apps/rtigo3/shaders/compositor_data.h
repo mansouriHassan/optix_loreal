@@ -35,6 +35,7 @@ struct CompositorData
 {
   // 8 byte alignment
   CUdeviceptr outputBuffer;
+  CUdeviceptr varianceBuffer;
   CUdeviceptr tileBuffer;
 
   int2 resolution;  // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.

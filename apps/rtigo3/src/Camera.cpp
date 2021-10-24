@@ -53,6 +53,8 @@ Camera::Camera()
 , m_dx(0)
 , m_dy(0)
 , m_changed(false)
+, pov(-1)
+, m_changedbyPOV(false)
 {
   m_center = make_float3(0.0f, 0.0f, 0.0f);
 
@@ -162,7 +164,7 @@ void Camera::setFocusDistance(float f)
 
 void Camera::zoom(float x)
 {
-  m_fov += float(x);
+  m_fov -= float(x);
   if (m_fov < 1.0f)
   {
     m_fov = 1.0f;
@@ -179,9 +181,10 @@ float Camera::getAspectRatio() const
   return m_aspect;
 }
 
-void Camera::markDirty()
+void Camera::markDirty(bool changedByPOV)
 {
   m_changed = true;
+  m_changedbyPOV = changedByPOV;
 }
 
 bool Camera::getFrustum(float3& p, float3& u, float3& v, float3& w, bool force)
@@ -211,6 +214,10 @@ bool Camera::getFrustum(float3& p, float3& u, float3& v, float3& w, bool force)
     w = m_cameraW;
 
     m_changed = false; // Next time asking for the frustum will return false unless the camera has changed again.
+    if (!m_changedbyPOV)
+        pov = -1;
+    else
+        m_changedbyPOV = false;
   }
   return changed;
 }
@@ -243,3 +250,41 @@ void Camera::setSpeedRatio(float f)
     m_speedRatio = 1000.0f;
   }
 }
+
+//Alex
+void Camera::setPhi(float phi) {
+    // function that will be linked with gui to set phi and theta with cursors 
+    m_phi = phi;
+    // Wrap phi
+    if (m_phi < 0.0f) {
+        m_phi += 1.0f;
+    }
+    else if (1.0f < m_phi) {
+        m_phi -= 1.0f;
+    }
+    m_changed = true;
+}
+
+float Camera::getPhi() {
+    // function that will be linked with gui to set phi and theta with cursors 
+    return m_phi;
+}
+
+void Camera::setTheta(float theta) {
+    // function that will be linked with gui to set phi and theta with cursors 
+    m_theta = theta;
+    // Wrap phi
+    if (m_theta < 0.0f) {
+        m_theta = 0.0f;
+    }
+    else if (1.0f < m_theta) {
+        m_theta = 1.0f;
+    }
+    m_changed = true;
+}
+
+float Camera::getTheta() {
+    // function that will be linked with gui to set phi and theta with cursors 
+    return m_theta;
+}
+

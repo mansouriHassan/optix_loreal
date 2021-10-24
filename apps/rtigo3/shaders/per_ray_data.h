@@ -75,9 +75,12 @@ struct State
 {
   float3 normalGeo;
   float3 tangent;
+  float3 bitangent;
   float3 normal;
   float3 texcoord;
   float3 albedo;    // PERF Added albedo to the state to allow modulation with an optional texture once before BSDF sampling and evaluation.
+  float3 rand;
+  float radius;
 };
 
 // Note that the fields are ordered by CUDA alignment restrictions.

@@ -137,7 +137,7 @@ std::shared_ptr<sg::Group> Application::createASSIMP(std::string const& filename
     // The post-processor took care of meshes per primitive type.
     if (mesh->mPrimitiveTypes == aiPrimitiveType_TRIANGLE && 2 < mesh->mNumVertices)
     {
-      std::vector<TriangleAttributes> attributes(mesh->mNumVertices);
+      std::vector<VertexAttributes> attributes(mesh->mNumVertices);
       
       bool needsTangents  = false;
       bool needsNormals   = false;
@@ -145,7 +145,7 @@ std::shared_ptr<sg::Group> Application::createASSIMP(std::string const& filename
 
       for (unsigned int iVertex = 0; iVertex < mesh->mNumVertices; ++iVertex)
       {
-        TriangleAttributes& attrib = attributes[iVertex];
+        VertexAttributes& attrib = attributes[iVertex];
 
         aiVector3D const& v = mesh->mVertices[iVertex];
         attrib.vertex = make_float3(v.x, v.y, v.z);
@@ -294,6 +294,12 @@ std::shared_ptr<sg::Group> Application::traverseScene(const struct aiScene *scen
         if (material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse) == aiReturn_SUCCESS)
         {
           m_materialsGUI[indexMaterial].albedo = make_float3(diffuse.r, diffuse.g, diffuse.b);
+          m_materialsGUI[indexMaterial].useHeadTexture = false;
+          m_materialsGUI[indexMaterial].useEyeTexture = false;
+          m_materialsGUI[indexMaterial].useAlbedoTexture = false;
+          m_materialsGUI[indexMaterial].useCutoutTexture = false;
+          if (itm->first.find("Material__11") != std::string::npos) m_materialsGUI[indexMaterial].useHeadTexture = true;
+          if (itm->first.find("02_-_Default") != std::string::npos) m_materialsGUI[indexMaterial].useEyeTexture = true;
         }
       }
       else

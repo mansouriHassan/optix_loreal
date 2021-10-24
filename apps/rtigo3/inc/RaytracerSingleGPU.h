@@ -47,6 +47,7 @@ public:
   unsigned int render();
   void updateDisplayTexture();
   const void* getOutputBufferHost();
+  const void* getOutputVarBufferHost();
 };
 
 #endif // RAYTRACER_SINGLE_GPU_H

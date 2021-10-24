@@ -36,7 +36,6 @@
 #include "inc/Picture.h"
 #include "inc/SceneGraph.h"
 #include "inc/Texture.h"
-#include "inc/NVMLImpl.h"
 
 #include "shaders/system_data.h"
 
@@ -69,6 +68,8 @@ public:
   virtual void initMaterials(std::vector<MaterialGUI> const& materialsGUI);
   virtual void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);
   virtual void initState(DeviceState const& state);
+  virtual void initVarianceCatching(const bool catchVariance);
+
 
   // Update functions should be replaced with NOP functions in a derived batch renderer because the device functions are fully asynchronous then.
   virtual void updateCamera(const int idCamera, CameraDefinition const& camera);
@@ -80,10 +81,7 @@ public:
   virtual unsigned int render() = 0;
   virtual void updateDisplayTexture() = 0;
   virtual const void* getOutputBufferHost() = 0;
-
-private:
-  bool activeNVLINK(const int home, const int peer) const;
-  int findActiveDevice(const unsigned int domain, const unsigned int bus, const unsigned int device) const;
+  virtual const void* getOutputVarBufferHost() = 0;
 
 public:
   RendererStrategy m_strategy;  // Constructor arguments
@@ -101,10 +99,8 @@ public:
   unsigned int m_iterationIndex;  // Tracks which frame is currently raytraced.
   unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
 
-  std::vector<unsigned int>       m_peerConnections; // Bitfield indicating peer-to-peer access between devices. Indexing is m_peerConnections[home] & (1 << peer)
-  std::vector< std::vector<int> > m_islands;         // Vector with vector of device indices (not ordinals) building a peer-to-peer island.
-
-  NVMLImpl m_nvml;
+  std::vector<unsigned int>       m_peerConnections; // Bitfield indicating peer-to-peer access between devices. Indexing is m_peerConnections[i] & (1 << j) with i the home and j the peer device.
+  std::vector< std::vector<int> > m_peerIslands;     // Vector with vector of device indices building a peer-to-peer island.
 };
 
 #endif // RAYTRACER_H

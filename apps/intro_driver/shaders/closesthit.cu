@@ -44,7 +44,6 @@ extern "C" __constant__ SystemParameter sysParameter;
 
 
 // Get the 3x4 object to world transform and its inverse from a two-level hierarchy.
-// Arguments float4* objectToWorld, float4* worldToObject shortened for smaller code.
 __forceinline__ __device__ void getTransforms(float4* mW, float4* mO) 
 {
   OptixTraversableHandle handle = optixGetTransformListHandle(0);
@@ -164,7 +163,7 @@ extern "C" __global__ void __closesthit__radiance()
   thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
   
   //thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
-  thePrd->pos = thePrd->pos + thePrd->wi * thePrd->distance; // DEBUG Check which version is more efficient.
+  thePrd->pos = thePrd->pos + thePrd->wi * thePrd->distance; // DAR DEBUG Check which version is more efficient.
 
   // Explicitly include edge-on cases as frontface condition!
   // Keeps the material stack from overflowing at silhouettes.
@@ -201,6 +200,9 @@ extern "C" __global__ void __closesthit__radiance()
       // If it's an implicit light hit from a diffuse scattering event and the light emission was not returning a zero pdf (e.g. backface or edge on).
       if ((thePrd->flags & FLAG_DIFFUSE) && DENOMINATOR_EPSILON < lightPdf)
       {
+        // The light.areaId buffer and light.area are always present on mesh lights.
+        //pdf *= light.areaId[thePrimitiveIndex] / light.area; // This is not needed for parallelogram lights, the primitive area is the light area.
+
         // Scale the emission with the power heuristic between the initial BSDF sample pdf and this implicit light sample pdf.
         emission *= powerHeuristic(thePrd->pdf, lightPdf);
       }
@@ -208,7 +210,7 @@ extern "C" __global__ void __closesthit__radiance()
 
       thePrd->radiance = emission;
       
-      // PERF End the path when hitting a light. Emissive materials with a non-black BSDF would normally just continue.
+      // DAR PERF End the path when hitting a light. Emissive materials with a non-black BSDF would normally just continue.
       thePrd->flags |= FLAG_TERMINATE;
       return;
     }
@@ -221,7 +223,7 @@ extern "C" __global__ void __closesthit__radiance()
 
   MaterialParameter const& parameters = sysParameter.materialParameters[theData->materialIndex]; // Use a const reference, not all BSDFs need all values.
 
-  state.albedo = parameters.albedo; // PERF Copy only this locally to be able to modulate it with the optional texture.
+  state.albedo = parameters.albedo; // DAR PERF Copy only this locally to be able to modulate it with the optional texture.
 
   if (parameters.textureAlbedo != 0)
   {
@@ -237,7 +239,7 @@ extern "C" __global__ void __closesthit__radiance()
 
   const int indexBSDF = NUM_LENS_SHADERS + NUM_LIGHT_TYPES + parameters.indexBSDF * 2;
 
-  optixDirectCall<void, MaterialParameter const&, State const&, PerRayData*>(indexBSDF, parameters, state, thePrd);
+  optixDirectCall<void, MaterialParameter const&, State const&, PerRayData*>(indexBSDF, parameters, state, thePrd); // DAR HACK FIXME Add direct callable function table offsets!
 
 #if USE_NEXT_EVENT_ESTIMATION
   // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.

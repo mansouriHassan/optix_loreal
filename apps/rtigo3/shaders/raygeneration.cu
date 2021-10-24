@@ -174,7 +174,7 @@ extern "C" __global__ void __raygen__path_tracer()
   
   unsigned int launchColumn = theLaunchIndex.x;
 
-  if (1 < sysData.deviceCount) // Multi-GPU distribution required?
+  if (sysData.distribution && 1 < sysData.deviceCount) // Multi-GPU distribution required?
   {
     launchColumn = distribute(theLaunchIndex); // Calculate mapping from launch index to pixel index.
     if (sysData.resolution.x <= launchColumn)  // Check if the launchColumn is outside the resolution.
@@ -209,7 +209,7 @@ extern "C" __global__ void __raygen__path_tracer()
   // DEBUG Highlight numerical errors.
   if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
   {
-    radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
+      radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
   }
   else if (isinf(radiance.x) || isinf(radiance.y) || isinf(radiance.z))
   {
@@ -228,6 +228,7 @@ extern "C" __global__ void __raygen__path_tracer()
     // The outputBuffer is a CUdeviceptr to allow different formats.
     // DAR FIXME Implement half4 support.
     float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+    float*  varbuffer = reinterpret_cast<float*>(sysData.varianceBuffer);
     // Note that the launch dimension is independent of resolution in some rendering strategies.
     const unsigned int index = theLaunchIndex.y * sysData.resolution.x + launchColumn;
 
@@ -248,12 +249,27 @@ extern "C" __global__ void __raygen__path_tracer()
 #else
     if (0 < sysData.iterationIndex)
     {
-      const float4 dst = buffer[index]; // RGBA32F
-      radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+            float4 dst = buffer[index]; // RGBA32F
+            float3 new_radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1));
+            buffer[index] = make_float4(new_radiance,1.0f);
+            if (sysData.catchVariance) {
+                float prev_variance = varbuffer[index];
+                float radiance_dist = (dst.x - radiance.x) * (dst.x - radiance.x)
+                    + (dst.y - radiance.y) * (dst.y - radiance.y)
+                    + (dst.z - radiance.z) * (dst.z - radiance.z);
+                float new_variance = (prev_variance * (float)sysData.iterationIndex
+                    + radiance_dist) / (float)(sysData.iterationIndex + 1);
+
+                varbuffer[index] = new_variance;
+            }
     }
-    // iterationIndex 0 will fill the buffer.
-    // If this isn't done separately, the result of the lerp() above is undefined, e.g. dst could be NaN.
-    buffer[index] = make_float4(radiance, 1.0f);
+    else {
+        // Iteration index 0 will fill the buffer, if this isn't done
+        // separately, the result of the lerp above is undefined
+        buffer[index] = make_float4(radiance, 1.0f);
+        varbuffer[index] = 0.f;
+
+    }
 #endif
   }
 }
@@ -269,7 +285,7 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
   
   unsigned int launchColumn = theLaunchIndex.x;
 
-  if (1 < sysData.deviceCount) // Multi-GPU distribution required?
+  if (sysData.distribution && 1 < sysData.deviceCount) // Multi-GPU distribution required?
   {
     launchColumn = distribute(theLaunchIndex); // Calculate mapping from launch index to pixel index.
     if (sysData.resolution.x <= launchColumn)  // Check if the launchColumn is outside the resolution.
@@ -341,9 +357,10 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 #else
     if (0 < sysData.iterationIndex)
     {
-      const float4 dst = buffer[index]; // RGBA32F
-      radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
-    }
+        const float4 dst = buffer[index]; // RGBA32F
+        radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+     }
+
     buffer[index] = make_float4(radiance, 1.0f);
 #endif
   }

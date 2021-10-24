@@ -42,14 +42,13 @@ extern "C" __global__ void __raygen__pathtracer()
 {
   PerRayData prd;
 
-  // This assumes that the launch dimensions are matching the size of the output buffer.
-  const uint3 theLaunchDim   = optixGetLaunchDimensions();
+  const uint3 theLaunchDim   = optixGetLaunchDimensions(); // DAR This assumes that the launch dimentions are matching the size of the output buffer.
   const uint3 theLaunchIndex = optixGetLaunchIndex();
 
   // Initialize the random number generator seed from the linear pixel index and the iteration index.
   prd.seed = tea<4>(theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x, sysParameter.iterationIndex);
 
-  // Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
+  // DAR Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
   // In this case theLaunchIndex is the pixel coordinate and theLaunchDim is sysOutputBuffer.size().
   const float2 screen = make_float2(theLaunchDim);
   const float2 pixel  = make_float2(theLaunchIndex);
@@ -176,7 +175,7 @@ extern "C" __global__ void __raygen__pathtracer()
     // Unbiased Russian Roulette path termination.
     if (sysParameter.pathLengths.x <= depth) // Start termination after a minimum number of bounces.
     {
-      const float probability = fmaxf(throughput); // Other options: // intensity(throughput); // fminf(0.5f, intensity(throughput));
+      const float probability = fmaxf(throughput); // DAR Other options: // intensity(throughput); // fminf(0.5f, intensity(throughput));
       if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
       {
         break;
@@ -209,7 +208,7 @@ extern "C" __global__ void __raygen__pathtracer()
   }
 
 #if USE_DEBUG_EXCEPTIONS
-  // DEBUG Highlight numerical errors.
+  // DAR DEBUG Highlight numerical errors.
   if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
   {
     radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red

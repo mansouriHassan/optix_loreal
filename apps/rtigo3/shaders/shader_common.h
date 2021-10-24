@@ -186,5 +186,8 @@ __forceinline__ __host__ __device__ float balanceHeuristic(const float a, const 
   return a / (a + b);
 }
 
+__forceinline__ __host__ __device__ float trigInverse(float x) {
+    return fminf(sqrtf(fmaxf(1.0f - x * x, 0.0f)), 1.0f);
+}
 
 #endif // SHADER_COMMON_H

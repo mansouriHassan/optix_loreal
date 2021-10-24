@@ -50,9 +50,10 @@ public:
 
   void activateContext();
   void synchronizeStream();
-  void render(const unsigned int iterationIndex, void** buffer);
+  void render(const unsigned int iterationIndex, void** buffer, void** varbuffer = nullptr);
   void updateDisplayTexture();
   const void* getOutputBufferHost();
+  const void* getOutputVarBufferHost();
 };
 
 #endif // DEVICE_MULTI_GPU_ZERO_COPY_H

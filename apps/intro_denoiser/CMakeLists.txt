@@ -32,23 +32,15 @@ message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(OptiX71 REQUIRED)
 find_package(CUDA 10.0 REQUIRED)
 find_package(DevIL_1_8_0 REQUIRED)
 
-# OptiX SDK 7.x versions are searched inside the top-level CMakeLists.txt.
-# Make the build work with either OptiX 7.3.0, 7.2.0, 7.1.0 or 7.0.0 releases.
-# Note that the denoiser API changed among OptiX 7 versions!
-# The application selects the necessary code changes via the OPTIX_VERSION define at compile time.
-if (OptiX73_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX73_INCLUDE_DIR}")
-elseif (OptiX72_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX72_INCLUDE_DIR}")
+# Make the build work with either OptiX 7.0.0 and 7.1.0 releases
+if (OptiX7_FOUND)
+  set(OPTIX_INCLUDE_DIR "${OPTIX7_INCLUDE_DIR}")
 elseif(OptiX71_FOUND)
   set(OPTIX_INCLUDE_DIR "${OPTIX71_INCLUDE_DIR}")
-elseif(OptiX7_FOUND)
-  set(OPTIX_INCLUDE_DIR "${OPTIX7_INCLUDE_DIR}")
-else()
-  message(FATAL_ERROR "No OptiX SDK 7.x found.")
 endif()
 #message("OPTIX_INCLUDE_DIR = " "${OPTIX_INCLUDE_DIR}")
 
@@ -98,10 +90,10 @@ set( SHADERS
   # Core shaders.
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/anyhit.cu
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/closesthit.cu
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/raygeneration.cu
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/exception.cu
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/miss.cu
-  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/raygeneration.cu
-
+  
   # Direct callables
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lens_shader.cu
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/light_sample.cu
@@ -128,7 +120,7 @@ NVCUDA_COMPILE_PTX( SOURCES ${SHADERS}
                     DEPENDENCIES ${SHADERS_HEADERS}
                     TARGET_PATH "${PTX_TARGET_DIR}/intro_denoiser_core"
                     GENERATED_FILES PTX_SOURCES
-                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
                   )
 
 source_group( "imgui"           FILES ${IMGUI} )

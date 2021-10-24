@@ -167,6 +167,7 @@ extern "C" __device__ LightSample __direct_callable__light_parallelogram(LightDe
 
   lightSample.pdf = 0.0f; // Default return, invalid light sample (backface, edge on, or too near to the surface)
 
+  if (light.lighting_activated == 0) return lightSample;
   lightSample.position  = light.position + light.vecU * sample.x + light.vecV * sample.y; // The light sample position in world coordinates.
   lightSample.direction = lightSample.position - point; // Sample direction from surface point to light sample position.
   lightSample.distance  = length(lightSample.direction);
@@ -179,7 +180,7 @@ extern "C" __device__ LightSample __direct_callable__light_parallelogram(LightDe
     {
       // Explicit light sample, must scale the emission by inverse probabilty to hit this light.
       lightSample.emission = light.emission * float(sysData.numLights); 
-      lightSample.pdf      = (lightSample.distance * lightSample.distance) / (light.area * cosTheta); // Solid angle pdf. Assumes light.area != 0.0f.
+      lightSample.pdf      = (lightSample.distance * lightSample.distance) / (light.area * cosTheta)/2; // Solid angle pdf. Assumes light.area != 0.0f.
     }
   }
 

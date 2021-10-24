@@ -46,7 +46,7 @@ namespace sg
 
     float3 corner;
 
-    TriangleAttributes attrib;
+    VertexAttributes attrib;
 
     switch (upAxis)
     {

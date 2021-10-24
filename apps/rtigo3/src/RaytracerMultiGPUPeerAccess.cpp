@@ -74,13 +74,8 @@ RaytracerMultiGPUPeerAccess::RaytracerMultiGPUPeerAccess(const int devicesMask,
     ++ordinal;
   }
 
-  // RS_INTERACTIVE_MULTI_GPU_PEER_ACCESS strategy is not supported for more than one peer-to-peer island.
-  m_isValid = (!m_activeDevices.empty() && enablePeerAccess() && m_islands.size() == 1);
-
-  if (m_islands.size() != 1)
-  {
-    std::cerr << "ERROR: enablePeerAccess() RS_INTERACTIVE_MULTI_GPU_PEER_ACCESS strategy is only supported with one peer-to-peer island.\n";
-  }
+  // enablePeerAccess() returns false for the RS_INTERACTIVE_MULTI_GPU_PEER_ACCESS strategy when more than one island is found.
+  m_isValid = !m_activeDevices.empty() && enablePeerAccess();
 }
 
 RaytracerMultiGPUPeerAccess::~RaytracerMultiGPUPeerAccess()
@@ -107,12 +102,13 @@ unsigned int RaytracerMultiGPUPeerAccess::render()
     // This pointer is used to communicate the shared peer-to-peer memory pointer between devices.
     // The first device allocates it when dirty and returns the pointer, all others reuse the same address on the device.
     void *bufferPeer = nullptr; 
+    void* varbufferPeer = nullptr;
 
     // If there is OpenGL interop and the active devices contain the device running the OpenGL implementation.
     if (m_deviceOGL != -1)
     {
       // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO.
-      m_activeDevices[m_deviceOGL]->render(m_iterationIndex, &bufferPeer); // Interactive rendering. All devices work on the same iteration index.
+      m_activeDevices[m_deviceOGL]->render(m_iterationIndex, &bufferPeer, &varbufferPeer); // Interactive rendering. All devices work on the same iteration index.
     }
 
     // This works for all cases, including m_deviceOGL == -1; 
@@ -122,7 +118,7 @@ unsigned int RaytracerMultiGPUPeerAccess::render()
     {
       if (i != m_deviceOGL) // Call other devices. This works for the case m_deviceOGL == -1 as well.
       {
-        m_activeDevices[i]->render(m_iterationIndex, &bufferPeer); // Interactive rendering. All devices work on the same iteration index.
+        m_activeDevices[i]->render(m_iterationIndex, &bufferPeer, &varbufferPeer); // Interactive rendering. All devices work on the same iteration index.
       }
     }
 
@@ -162,4 +158,22 @@ const void* RaytracerMultiGPUPeerAccess::getOutputBufferHost()
   
   // The shared peer-to-peer buffer resides on device "index" and the host buffer is also only resized by that device.
   return m_activeDevices[index]->getOutputBufferHost();
+}
+
+
+const void* RaytracerMultiGPUPeerAccess::getOutputVarBufferHost()
+{
+    // Sync all devices before getting the buffer from the device owning the shared buffer.
+    for (size_t i = 0; i < m_activeDevices.size(); ++i)
+    {
+        m_activeDevices[i]->activateContext();
+        m_activeDevices[i]->synchronizeStream();
+    }
+
+    // If there is OpenGL interop and the active devices contain the device running the OpenGL implementation
+    // that device has allocated the shared buffer, otherwise the first active device.
+    const int index = (m_deviceOGL != -1) ? m_deviceOGL : 0;
+
+    // The shared peer-to-peer buffer resides on device "index" and the host buffer is also only resized by that device.
+    return m_activeDevices[index]->getOutputVarBufferHost();
 }

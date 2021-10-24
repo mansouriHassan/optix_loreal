@@ -73,7 +73,7 @@ namespace sg
         float3 normal = make_float3(cosPhi * sinTheta,
                                     -cosTheta,           // -y to start at the south pole.
                                     -sinPhi * sinTheta);
-        TriangleAttributes attrib;
+        VertexAttributes attrib;
 
         attrib.vertex   = normal * radius;
         attrib.tangent  = make_float3(-sinPhi, 0.0f, -cosPhi);

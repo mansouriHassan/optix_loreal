@@ -53,6 +53,7 @@ static int runApp(const Options& options)
   if (!window)
   {
     callbackError(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
+    glfwTerminate();
     return APP_ERROR_CREATE_WINDOW;
   }
 
@@ -61,6 +62,7 @@ static int runApp(const Options& options)
   if (glewInit() != GL_NO_ERROR)
   {
     callbackError(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
+    glfwTerminate();
     return APP_ERROR_GLEW_INIT;
   }
     
@@ -72,6 +74,7 @@ static int runApp(const Options& options)
   {
     std::cerr << "ERROR: Application() failed to initialize successfully.\n";
     ilShutDown();
+    glfwTerminate();
     return APP_ERROR_APP_INIT;
   }
 
@@ -132,8 +135,6 @@ int main(int argc, char *argv[])
   {
     result = runApp(options);
   }
-
-  glfwTerminate();
 
   return result;
 }

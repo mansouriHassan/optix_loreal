@@ -78,7 +78,7 @@ unsigned int RaytracerSingleGPU::render()
   // Continue manual accumulation rendering if the samples per pixel have not been reached.
   if (m_iterationIndex < m_samplesPerPixel)
   {
-    m_activeDevices[0]->render(m_iterationIndex, nullptr); // Only one device in this implementation.
+    m_activeDevices[0]->render(m_iterationIndex, nullptr, nullptr); // Only one device in this implementation.
 
     ++m_iterationIndex;
   }  
@@ -91,3 +91,7 @@ const void* RaytracerSingleGPU::getOutputBufferHost() // Not called when using O
   return m_activeDevices[0]->getOutputBufferHost(); // Only one device in this implementation.
 }
 
+const void* RaytracerSingleGPU::getOutputVarBufferHost() // Not called when using OpenGL interop.
+{
+    return m_activeDevices[0]->getOutputVarBufferHost(); // Only one device in this implementation.
+}

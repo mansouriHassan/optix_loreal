@@ -45,6 +45,7 @@
 #include "inc/MaterialGUI.h"
 #include "inc/Picture.h"
 #include "inc/SceneGraph.h"
+#include "inc/Hair.h"
 #include "inc/Texture.h"
 #include "inc/MyAssert.h"
 
@@ -219,20 +220,30 @@ enum ProgramGroupId
   PGID_LENS_SPHERE,
   PGID_LIGHT_ENV,
   PGID_LIGHT_AREA,
+
   PGID_BRDF_DIFFUSE_SAMPLE,
   PGID_BRDF_DIFFUSE_EVAL,
+
   PGID_BRDF_SPECULAR_SAMPLE,
   PGID_BRDF_SPECULAR_EVAL,
+
   PGID_BSDF_SPECULAR_SAMPLE,
   PGID_BSDF_SPECULAR_EVAL,
+
   PGID_BRDF_GGX_SMITH_SAMPLE,
   PGID_BRDF_GGX_SMITH_EVAL,
+
   PGID_BSDF_GGX_SMITH_SAMPLE,
   PGID_BSDF_GGX_SMITH_EVAL, 
-  LAST_DIRECT_CALLABLE_ID = PGID_BSDF_GGX_SMITH_EVAL,
+
+  PGID_BCSDF_HAIR_SAMPLE,
+  PGID_BCSDF_HAIR_EVAL,
+  LAST_DIRECT_CALLABLE_ID = PGID_BCSDF_HAIR_EVAL,
   // Programs using SbtRecordGeometryInstanceData
   PGID_HIT_RADIANCE,
   PGID_HIT_SHADOW,
+  PGID_HIT_RADIANCE_CURVE,
+  PGID_HIT_SHADOW_CURVE,
   PGID_HIT_RADIANCE_CUTOUT,
   PGID_HIT_SHADOW_CUTOUT,
   // Number of all program group entries.
@@ -255,9 +266,15 @@ struct GeometryData
   OptixTraversableHandle traversable;
   CUdeviceptr            d_attributes;
   CUdeviceptr            d_indices;
-  size_t                 numAttributes; // Count of TriangleAttributes structs.
+  size_t                 numAttributes; // Count of VertexAttributes structs.
   size_t                 numIndices;    // Count of unsigned ints, not triplets.
   CUdeviceptr            d_gas;
+
+  // For hair
+  CUdeviceptr  d_strand_rand;     // strand_u at segment start per segment
+  CUdeviceptr  d_strand_i;     // strand index per segment
+  CUdeviceptr  d_strand_info;  // info.x = segment base
+                                // info.y = strand length (segments)
 };
 
 struct InstanceData
@@ -271,7 +288,7 @@ struct InstanceData
 
   unsigned int idGeometry;
   int          idMaterial; // Negative is an error.
-  int          idLight;    // Negative means no light. 
+  int          idLight;    // Negative means no light.
 };
 
 // GUI controllable settings in the device.
@@ -280,11 +297,14 @@ struct DeviceState
   int2         resolution;
   int2         tileSize;
   int2         pathLengths;
+  int          distribution; // This is depending on the strategy.
   int          samplesSqrt;
   LensShader   lensShader;
   float        epsilonFactor;
   float        envRotation;
   float        clockFactor;
+  int          screenshotImageNum;
+  bool         catchVariance;
 };
 
 
@@ -315,14 +335,16 @@ public:
   virtual void updateMaterial(const int idMaterial, MaterialGUI const& materialGUI);
   
   virtual void setState(DeviceState const& state);
+  virtual void setVarianceCatching(const bool catchVariance);
   virtual void compositor(Device* other);
   
   // Abstract functions:
   virtual void activateContext() = 0;
   virtual void synchronizeStream() = 0;
-  virtual void render(const unsigned int iterationIndex, void** buffer) = 0;
+  virtual void render(const unsigned int iterationIndex, void** buffer, void** varbuffer) = 0;
   virtual void updateDisplayTexture() = 0;
   virtual const void* getOutputBufferHost() = 0; // This always needs to be implemented for the screenshot functionality!
+  virtual const void* getOutputVarBufferHost() = 0;
 
 private:
   OptixResult initFunctionTable();
@@ -331,6 +353,7 @@ private:
   void initPipeline();
   void traverseNode(std::shared_ptr<sg::Node> node, float matrix[12], InstanceData data);
   unsigned int createGeometry(std::shared_ptr<sg::Triangles> geometry);
+  unsigned int createHairGeometry(std::shared_ptr<sg::Curves> geometry);
   void createInstance(const OptixTraversableHandle traversable, float matrix[12], InstanceData const& data);
   void createTLAS();
   void createHitGroupRecords();
@@ -345,6 +368,7 @@ public:
   int              m_interop;     // The interop mode to use.
   unsigned int     m_tex;         // The OpenGL HDR texture object.
   unsigned int     m_pbo;         // The OpenGL PixelBufferObject handle when interop should be used. 0 when not.
+  bool             m_catchVariance; // catch variance through ray generation
   
   float m_clockFactor; // Clock Factor scaled by CLOCK_FACTOR_SCALE (1.0e-9f) for USE_TIME_VIEW
 
@@ -354,9 +378,7 @@ public:
   char         m_deviceLUID[8];
   unsigned int m_nodeMask;
 
-  std::string m_deviceName;
-  std::string m_devicePciBusId;  // domain:bus:device.function, required to find matching CUDA device via NVML.
-
+  std::string     m_deviceName;
   DeviceAttribute m_deviceAttribute; // CUDA 
   DeviceProperty  m_deviceProperty;  // OptiX
 
@@ -373,7 +395,9 @@ public:
   CUdeviceptr m_d_sbtRecordHeaders;
  
   SbtRecordGeometryInstanceData m_sbtRecordHitRadiance;
+  SbtRecordGeometryInstanceData m_sbtRecordHitRadianceCurve;
   SbtRecordGeometryInstanceData m_sbtRecordHitShadow;
+  SbtRecordGeometryInstanceData m_sbtRecordHitShadowCurve;
 
   SbtRecordGeometryInstanceData m_sbtRecordHitRadianceCutout;
   SbtRecordGeometryInstanceData m_sbtRecordHitShadowCutout;
@@ -397,6 +421,8 @@ public:
   bool m_isDirtyOutputBuffer;
   bool m_ownsSharedBuffer;
 
+  Texture* m_textureEye;
+  Texture* m_textureHead;
   Texture* m_textureAlbedo;
   Texture* m_textureCutout;
   Texture* m_textureEnv;

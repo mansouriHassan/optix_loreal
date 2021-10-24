@@ -75,9 +75,15 @@ DeviceSingleGPU::~DeviceSingleGPU()
   {
     case INTEROP_MODE_OFF:
       CU_CHECK_NO_THROW( cuMemFree(m_systemData.outputBuffer) ); 
+      
+     CU_CHECK_NO_THROW(cuMemFree(m_systemData.varianceBuffer));
+     
       break;
     case INTEROP_MODE_TEX:
-      CU_CHECK_NO_THROW( cuMemFree(m_systemData.outputBuffer) ); 
+      CU_CHECK_NO_THROW( cuMemFree(m_systemData.outputBuffer) );
+     
+      CU_CHECK_NO_THROW(cuMemFree(m_systemData.varianceBuffer));
+      
       CU_CHECK_NO_THROW( cuGraphicsUnregisterResource(m_cudaGraphicsResource) );
       break;
     case INTEROP_MODE_PBO:
@@ -98,7 +104,7 @@ void DeviceSingleGPU::synchronizeStream()
   CU_CHECK( cuStreamSynchronize(m_cudaStream) );
 }
 
-void DeviceSingleGPU::render(const unsigned int iterationIndex, void** /* buffer */)
+void DeviceSingleGPU::render(const unsigned int iterationIndex, void** /* buffer */, void**)
 {
   // activateContext();
 
@@ -108,17 +114,27 @@ void DeviceSingleGPU::render(const unsigned int iterationIndex, void** /* buffer
   {
     // Required for getOutputBufferHost() which is still called in the screenshot() function.
     m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y); 
+    m_varbufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
 
     switch (m_interop)
     {
       case INTEROP_MODE_OFF:
         CU_CHECK( cuMemFree(m_systemData.outputBuffer) );
         CU_CHECK( cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&m_systemData.outputBuffer), sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y) );
+
+        
+        CU_CHECK(cuMemFree(m_systemData.varianceBuffer));
+        CU_CHECK(cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&m_systemData.varianceBuffer), sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y));
+        
         break;
 
       case INTEROP_MODE_TEX:
         CU_CHECK( cuMemFree(m_systemData.outputBuffer) );
         CU_CHECK( cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&m_systemData.outputBuffer), sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y) );
+
+        CU_CHECK(cuMemFree(m_systemData.varianceBuffer));
+        CU_CHECK(cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&m_systemData.varianceBuffer), sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y));
+    
         // Resize the target texture as well for the cuMemcpy3D.
         CU_CHECK( cuGraphicsUnregisterResource(m_cudaGraphicsResource) );
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei) m_systemData.resolution.x, (GLsizei) m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT, (GLvoid*) m_bufferHost.data()); // RGBA32F
@@ -236,7 +252,7 @@ void DeviceSingleGPU::updateDisplayTexture()
   }
 }
 
-const void* DeviceSingleGPU::getOutputBufferHost() 
+const void* DeviceSingleGPU::getOutputVarBufferHost() 
 {
   // activateContext();
   
@@ -246,21 +262,45 @@ const void* DeviceSingleGPU::getOutputBufferHost()
   {
     case INTEROP_MODE_OFF:
     case INTEROP_MODE_TEX:
-      CU_CHECK( cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream) );
+      CU_CHECK( cuMemcpyDtoHAsync(m_varbufferHost.data(), m_systemData.varianceBuffer, sizeof(float) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream) );
       synchronizeStream(); // Wait for the buffer to arrive on the host. Context is created with CU_CTX_SCHED_SPIN.
       break;
 
     case INTEROP_MODE_PBO:
       {
-        size_t size;
-
-        CU_CHECK( cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream) ); // This is an implicit cuSynchronizeStream().
-        CU_CHECK( cuGraphicsResourceGetMappedPointer(&m_systemData.outputBuffer, &size, m_cudaGraphicsResource) ); // The pointer can change on every map!
-        CU_CHECK( cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream) );
-        CU_CHECK( cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream) ); // This is an implicit cuSynchronizeStream().
+        std::cout << "Variance catching is not available in Interop PBO mode" << std::endl;
       }
       break;
   }
 
-  return m_bufferHost.data();
+  return m_varbufferHost.data();
+}
+
+const void* DeviceSingleGPU::getOutputBufferHost()
+{
+    // activateContext();
+
+    MY_ASSERT(!m_isDirtyOutputBuffer);
+
+    switch (m_interop)
+    {
+    case INTEROP_MODE_OFF:
+    case INTEROP_MODE_TEX:
+        CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+        synchronizeStream(); // Wait for the buffer to arrive on the host. Context is created with CU_CTX_SCHED_SPIN.
+        break;
+
+    case INTEROP_MODE_PBO:
+    {
+        size_t size;
+
+        CU_CHECK(cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
+        CU_CHECK(cuGraphicsResourceGetMappedPointer(&m_systemData.outputBuffer, &size, m_cudaGraphicsResource)); // The pointer can change on every map!
+        CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+        CU_CHECK(cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
+    }
+    break;
+    }
+
+    return m_bufferHost.data();
 }

@@ -27,7 +27,7 @@
  */
 
 #include "inc/Device.h"
-
+#include "inc/Hair.h"
 #include "inc/CheckMacros.h"
 
 #ifdef _WIN32
@@ -35,7 +35,7 @@
 #define WIN32_LEAN_AND_MEAN 1
 #endif
 #include <windows.h>
-// The cfgmgr32 header is necessary for interrogating driver information in the registry.
+// The cfgmgr32 header is necessary for interrogating driver in     formation in the registry.
 #include <cfgmgr32.h>
 // For convenience the library is also linked in automatically using the #pragma command.
 #pragma comment(lib, "Cfgmgr32.lib")
@@ -176,13 +176,11 @@ static void* optixLoadWindowsDll(void)
 // Global logger function instead of the Logger class to be able to submit per device date via the cbdata pointer.
 static std::mutex g_mutexLogger;
 
-static void callbackLogger(unsigned int level, const char* tag, const char* message, void* cbdata)
+static void callbackLogger(unsigned int level, const char* tag, const char* message, void* /* cbdata */)
 {
   std::lock_guard<std::mutex> lock(g_mutexLogger);
 
-  Device* device = static_cast<Device*>(cbdata);
-
-  std::cerr << tag  << " (" << level << ") [" << device->m_ordinal << "]: " << ((message) ? message : "(no message)") << '\n';
+  std::cerr << tag << " (" << level << ") : " << ((message) ? message : "(no message)") << '\n';
 }
 
 
@@ -229,9 +227,12 @@ Device::Device(const RendererStrategy strategy,
 , m_nodeMask(0)
 , m_launchWidth(0)
 , m_ownsSharedBuffer(false)
+, m_textureEye(nullptr)
+, m_textureHead(nullptr)
 , m_textureAlbedo(nullptr)
 , m_textureCutout(nullptr)
 , m_textureEnv(nullptr)
+, m_catchVariance(0)
 {
   initDeviceAttributes(); // CUDA
 
@@ -259,7 +260,7 @@ Device::Device(const RendererStrategy strategy,
   OptixDeviceContextOptions options = {};
 
   options.logCallbackFunction = &callbackLogger;
-  options.logCallbackData     = this; // This allows per device logs. It's currently printing the device ordinal.
+  options.logCallbackData     = this; // This allows per device logs.
   options.logCallbackLevel    = 3;    // Keep at warning level to suppress the disk cache messages.
 
   OPTIX_CHECK( m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext) );
@@ -270,9 +271,11 @@ Device::Device(const RendererStrategy strategy,
   m_isDirtySystemData = true; // Trigger SystemData update before the next launch.
 
   // Initialize all renderer system data.
-  //m_systemData.rect                = make_int4(0, 0, 1, 1); // Currently unused.
+  m_systemData.rect                = make_int4(0, 0, 1, 1);
   m_systemData.topObject           = 0;
   m_systemData.outputBuffer        = 0; // Deferred allocation. Only done in render() of the derived Device classes to allow for different memory spaces!
+  m_systemData.varianceBuffer      = 0; // Deferred allocation. Only done in render() of the derived Device classes to allow for different memory spaces!
+  m_systemData.catchVariance = false;
   m_systemData.tileBuffer          = 0; // For the final frame tiled renderer the intermediate buffer is only tileSize.
   m_systemData.texelBuffer         = 0; // For the final frame tiled renderer. Contains the accumulated result of the current tile.
   m_systemData.cameraDefinitions   = nullptr;
@@ -287,6 +290,7 @@ Device::Device(const RendererStrategy strategy,
   m_systemData.pathLengths         = make_int2(2, 5); // min, max
   m_systemData.deviceCount         = m_count; // The number of active devices.
   m_systemData.deviceIndex         = m_index; // This allows to distinguish multiple devices.
+  m_systemData.distribution        = 0;       // Indicate if workload distribution with the tiles is required.
   m_systemData.iterationIndex      = 0;
   m_systemData.samplesSqrt         = 0; // Invalid value! Enforces that there is at least one setState() call before rendering.
   m_systemData.sceneEpsilon        = 500.0f * SCENE_EPSILON_SCALE;
@@ -295,6 +299,7 @@ Device::Device(const RendererStrategy strategy,
   m_systemData.numCameras          = 0;
   m_systemData.numLights           = 0;
   m_systemData.numMaterials        = 0;
+      
   m_systemData.envWidth            = 0;
   m_systemData.envHeight           = 0;
   m_systemData.envIntegral         = 1.0f;
@@ -314,6 +319,8 @@ Device::~Device()
   delete m_textureEnv; // Allowed to be nullptr.
   delete m_textureCutout;
   delete m_textureAlbedo;
+  delete m_textureHead;
+  delete m_textureEye;
 
   CU_CHECK_NO_THROW( cuMemFree(reinterpret_cast<CUdeviceptr>(m_d_systemData)) );
 
@@ -349,15 +356,12 @@ Device::~Device()
 
 void Device::initDeviceAttributes()
 {
-  char text[1024];
-  text[1023] = 0;
+  char deviceName[1024];
+  deviceName[1023] = 0;
 
-  CU_CHECK( cuDeviceGetName(text, 1023, m_ordinal) );
-  m_deviceName = std::string(text);
-
-  CU_CHECK( cuDeviceGetPCIBusId(text, 1023, m_ordinal) );
-  m_devicePciBusId = std::string(text);
-  //std::cout << "domain:bus:device.function = " << m_devicePciBusId << '\n'; // DEBUG
+  CU_CHECK( cuDeviceGetName(deviceName, 1023, m_ordinal) );
+  m_deviceName = std::string(deviceName);
+  std::cout << "Device " << m_ordinal << ": " << m_deviceName << '\n';
 
   CU_CHECK( cuDeviceGetAttribute(&m_deviceAttribute.maxThreadsPerBlock, CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, m_ordinal) );
   CU_CHECK( cuDeviceGetAttribute(&m_deviceAttribute.maxBlockDimX, CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X, m_ordinal) );
@@ -534,13 +538,14 @@ void Device::initPipeline()
 
   OptixModuleCompileOptions mco = {};
 
-  mco.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
 #if USE_DEBUG_EXCEPTIONS
-  mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // No optimizations.
-  mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;     // Full debug. Never profile kernels with this setting!
+  mco.maxRegisterCount  = 0;
+  mco.optLevel          = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // No optimizations.
+  mco.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_FULL;     // Full debug.
 #else
-  mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // All optimizations, is the default.
-  mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO; // Keep generated line info for Nsight Compute profiling. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
+  mco.maxRegisterCount  = 0;
+  mco.optLevel          = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // All optimizations, is the default.
+  mco.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_NONE;     // or OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
 #endif
 
   OptixPipelineCompileOptions pco = {};
@@ -548,21 +553,18 @@ void Device::initPipeline()
   pco.usesMotionBlur        = 0;
   pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
   pco.numPayloadValues      = 2;  // I need two to encode a 64-bit pointer to the per ray payload structure.
-  pco.numAttributeValues    = 2;  // The minimum is two, for the barycentrics.
+  pco.numAttributeValues    = 4;  // The minimum is two, for the barycentrics.
+
+  pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE |  OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_QUADRATIC_BSPLINE;
 #if USE_DEBUG_EXCEPTIONS
-  pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW |
-                       OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                       OPTIX_EXCEPTION_FLAG_USER |
-                       OPTIX_EXCEPTION_FLAG_DEBUG;
+  pco.exceptionFlags        = OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW |
+                              OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                              OPTIX_EXCEPTION_FLAG_USER |
+                              OPTIX_EXCEPTION_FLAG_DEBUG;
 #else
-  pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+  pco.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
 #endif
   pco.pipelineLaunchParamsVariableName = "sysData";
-#if (OPTIX_VERSION != 70000)
-  // Only using built-in Triangles in this renderer. 
-  // This is the recommended setting for best performance then.
-  pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE; // New in OptiX 7.1.0.
-#endif
 
   OptixModule moduleRaygeneration;
   std::string ptx = readPTX("./rtigo3_core/raygeneration.ptx");
@@ -603,6 +605,15 @@ void Device::initPipeline()
   OptixModule moduleGgxSmith;
   ptx = readPTX("./rtigo3_core/bxdf_ggx_smith.ptx");
   OPTIX_CHECK( m_api.optixModuleCreateFromPTX(m_optixContext, &mco, &pco, ptx.c_str(), ptx.size(), nullptr, nullptr, &moduleGgxSmith) );
+
+  OptixModule moduleBCSDFHair;
+  ptx = readPTX("./rtigo3_core/bcsdf_hair.ptx");
+  OPTIX_CHECK(m_api.optixModuleCreateFromPTX(m_optixContext, &mco, &pco, ptx.c_str(), ptx.size(), nullptr, nullptr, &moduleBCSDFHair));
+
+  OptixModule moduleLinearCurve;
+  OptixBuiltinISOptions builtinISOptions = {};
+  builtinISOptions.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE;
+  OPTIX_CHECK(m_api.optixBuiltinISModuleGet(m_optixContext, &mco, &pco, &builtinISOptions, &moduleLinearCurve));
 
   std::vector<OptixProgramGroupDesc> programGroupDescriptions(NUM_PROGRAM_GROUP_IDS);
   memset(programGroupDescriptions.data(), 0, sizeof(OptixProgramGroupDesc) * programGroupDescriptions.size());
@@ -749,10 +760,22 @@ void Device::initPipeline()
   pgd->callables.entryFunctionNameDC = "__direct_callable__sample_bsdf_ggx_smith";
 
   pgd = &programGroupDescriptions[PGID_BSDF_GGX_SMITH_EVAL];
-  pgd->kind  = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
   pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
-  pgd->callables.moduleDC            = moduleSpecular; // No implementation for __direct_callable__eval_ggx_smith, it's specular.
+  pgd->callables.moduleDC = moduleSpecular; // No implementation for __direct_callable__eval_ggx_smith, it's specular.
   pgd->callables.entryFunctionNameDC = "__direct_callable__eval_brdf_specular"; // black
+
+  pgd = &programGroupDescriptions[PGID_BCSDF_HAIR_SAMPLE];
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+  pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
+  pgd->callables.moduleDC = moduleBCSDFHair;
+  pgd->callables.entryFunctionNameDC = "__direct_callable__sample_bcsdf_hair";
+
+  pgd = &programGroupDescriptions[PGID_BCSDF_HAIR_EVAL];
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+  pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
+  pgd->callables.moduleDC = moduleBCSDFHair;
+  pgd->callables.entryFunctionNameDC = "__direct_callable__eval_bcsdf_hair";
 
   // HitGroups are using SbtRecordGeometryInstanceData and will be put into a separate CUDA memory block.
   pgd = &programGroupDescriptions[PGID_HIT_RADIANCE];
@@ -761,10 +784,26 @@ void Device::initPipeline()
   pgd->hitgroup.moduleCH            = moduleClosesthit;
   pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance";
 
-  pgd = &programGroupDescriptions[PGID_HIT_SHADOW];
-  pgd->kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+  pgd = &programGroupDescriptions[PGID_HIT_RADIANCE_CURVE];
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
-  pgd->hitgroup.moduleAH            = moduleAnyhit;
+  pgd->hitgroup.moduleCH = moduleClosesthit;
+  pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance";
+  pgd->hitgroup.moduleIS = moduleLinearCurve;
+  pgd->hitgroup.entryFunctionNameIS = 0;
+
+  pgd = &programGroupDescriptions[PGID_HIT_SHADOW_CURVE];
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+  pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
+  pgd->hitgroup.moduleAH = moduleAnyhit;
+  pgd->hitgroup.entryFunctionNameAH = "__anyhit__shadow_curve";
+  pgd->hitgroup.moduleIS = moduleLinearCurve;
+  pgd->hitgroup.entryFunctionNameIS = 0;
+
+  pgd = &programGroupDescriptions[PGID_HIT_SHADOW];
+  pgd->kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+  pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
+  pgd->hitgroup.moduleAH = moduleAnyhit;
   pgd->hitgroup.entryFunctionNameAH = "__anyhit__shadow";
 
   pgd = &programGroupDescriptions[PGID_HIT_RADIANCE_CUTOUT];
@@ -791,9 +830,9 @@ void Device::initPipeline()
 
   plo.maxTraceDepth = 2;
 #if USE_DEBUG_EXCEPTIONS
-  plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;     // Full debug. Never profile kernels with this setting!
+  plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #else
-  plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO; // Keep generated line info for Nsight Compute profiling. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
+  plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 #endif
 #if (OPTIX_VERSION == 70000)
   plo.overrideUsesMotionBlur = 0; // Does not exist in OptiX 7.1.0.
@@ -853,7 +892,9 @@ void Device::initPipeline()
   // Note that the SBT record data field is uninitialized after these!
   // These are stored to be able to initialize the SBT hitGroup with the respective opaque and cutout shaders.
   OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_RADIANCE],        &m_sbtRecordHitRadiance) );
+  OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_RADIANCE_CURVE],  &m_sbtRecordHitRadianceCurve));
   OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_SHADOW],          &m_sbtRecordHitShadow) );
+  OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_SHADOW_CURVE],    &m_sbtRecordHitShadowCurve));
   OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_RADIANCE_CUTOUT], &m_sbtRecordHitRadianceCutout) );
   OPTIX_CHECK( m_api.optixSbtRecordPackHeader(programGroups[PGID_HIT_SHADOW_CUTOUT],   &m_sbtRecordHitShadowCutout) );
 
@@ -886,22 +927,46 @@ void Device::initPipeline()
   OPTIX_CHECK( m_api.optixModuleDestroy(moduleDiffuse) );
   OPTIX_CHECK( m_api.optixModuleDestroy(moduleSpecular) );
   OPTIX_CHECK( m_api.optixModuleDestroy(moduleGgxSmith) );
+  OPTIX_CHECK( m_api.optixModuleDestroy(moduleLinearCurve) );
 }
 
 
-// FIXME Hardcocded textures. => See nvlink_shared which supports textures per material.
+// HACK FIXME Hardcocded textures.
 void Device::initTextures(std::map<std::string, Picture*> const& mapOfPictures)
 {
   activateContext();
   synchronizeStream();
 
-  std::map<std::string, Picture*>::const_iterator itAlbedo = mapOfPictures.find(std::string("albedo"));
+  if (m_textureEye != NULL)
+      delete m_textureEye;
+  if (m_textureHead != NULL)
+      delete m_textureHead;
+  if (m_textureAlbedo != NULL)
+      delete m_textureAlbedo;
+  if (m_textureCutout != NULL)
+      delete m_textureCutout;
+  if (m_textureEnv != NULL)
+      delete m_textureEnv;
+
+  std::map<std::string, Picture*>::const_iterator itEye = mapOfPictures.find(std::string("eye"));
+  MY_ASSERT(itEye != mapOfPictures.end());
+
+  std::map<std::string, Picture*>::const_iterator itHead = mapOfPictures.find(std::string("head"));
+  MY_ASSERT(itHead != mapOfPictures.end());
+
+  std::map<std::string, Picture*>::const_iterator itAlbedo = mapOfPictures.find(std::string("Albedo"));
   MY_ASSERT(itAlbedo != mapOfPictures.end());
 
-  std::map<std::string, Picture*>::const_iterator itCutout = mapOfPictures.find(std::string("cutout"));
+  std::map<std::string, Picture*>::const_iterator itCutout = mapOfPictures.find(std::string("Cutout"));
   MY_ASSERT(itCutout != mapOfPictures.end());
 
   std::map<std::string, Picture*>::const_iterator itEnv = mapOfPictures.find(std::string("environment"));
+
+  m_textureEye = new Texture();
+  m_textureEye ->create(itEye->second, IMAGE_FLAG_2D);
+
+  m_textureHead = new Texture();
+  m_textureHead->create(itHead->second, IMAGE_FLAG_2D);
 
   m_textureAlbedo = new Texture();
   m_textureAlbedo->create(itAlbedo->second, IMAGE_FLAG_2D);
@@ -1008,28 +1073,53 @@ void Device::initMaterials(std::vector<MaterialGUI> const& materialsGUI)
     MaterialGUI const&  materialGUI = materialsGUI[i];      // Material UI data in the host.
     MaterialDefinition& material    = m_materials[i]; // MaterialDefinition data on the host in device layout.
 
+    MY_ASSERT(m_textureEye != nullptr);
+    MY_ASSERT(m_textureHead != nullptr);
     MY_ASSERT(m_textureAlbedo != nullptr);
     MY_ASSERT(m_textureCutout != nullptr);
 
-    material.textureAlbedo = (materialGUI.useAlbedoTexture) ? m_textureAlbedo->getTextureObject() : 0;
-    material.textureCutout = (materialGUI.useCutoutTexture) ? m_textureCutout->getTextureObject() : 0;
-    material.roughness     = materialGUI.roughness;
-    material.indexBSDF     = materialGUI.indexBSDF;
-    material.albedo        = materialGUI.albedo;
-    material.absorption    = make_float3(0.0f); // Null coefficient means no absorption active.
-    if (0.0f < materialGUI.absorptionScale)
-    {
-      // Calculate the effective absorption coefficient from the GUI parameters.
-      // The absorption coefficient components must all be > 0.0f if absorptionScale > 0.0f.
-      // Prevent logf(0.0f) which results in infinity.
-      const float x = -logf(fmax(0.0001f, materialGUI.absorptionColor.x));
-      const float y = -logf(fmax(0.0001f, materialGUI.absorptionColor.y));
-      const float z = -logf(fmax(0.0001f, materialGUI.absorptionColor.z));
-      material.absorption = make_float3(x, y, z) * materialGUI.absorptionScale;
-      //std::cout << "absorption = (" << material.absorption.x << ", " << material.absorption.y << ", " << material.absorption.z << ")\n"; // DEBUG
+    if (materialGUI.indexBSDF != INDEX_BCSDF_HAIR) {
+        material.textureEye = (materialGUI.useEyeTexture) ? m_textureEye->getTextureObject() : 0;
+        material.textureHead = (materialGUI.useHeadTexture) ? m_textureHead->getTextureObject() : 0;
+        material.textureAlbedo = (materialGUI.useAlbedoTexture) ? m_textureAlbedo->getTextureObject() : 0;
+        material.textureCutout = (materialGUI.useCutoutTexture) ? m_textureCutout->getTextureObject() : 0;
+        material.roughness = materialGUI.roughness;
+        material.indexBSDF = materialGUI.indexBSDF;
+        material.albedo = materialGUI.albedo;
+        material.absorption = make_float3(0.0f); // Null coefficient means no absorption active.
+        if (0.0f < materialGUI.absorptionScale)
+        {
+            // Calculate the effective absorption coefficient from the GUI parameters.
+            // The absorption coefficient components must all be > 0.0f if absorptionScale > 0.0f.
+            // Prevent logf(0.0f) which results in infinity.
+            const float x = -logf(fmax(0.0001f, materialGUI.absorptionColor.x));
+            const float y = -logf(fmax(0.0001f, materialGUI.absorptionColor.y));
+            const float z = -logf(fmax(0.0001f, materialGUI.absorptionColor.z));
+            material.absorption = make_float3(x, y, z) * materialGUI.absorptionScale;
+            //std::cout << "absorption = (" << material.absorption.x << ", " << material.absorption.y << ", " << material.absorption.z << ")\n";
+        }
+        material.ior = materialGUI.ior;
+        material.flags = (materialGUI.thinwalled) ? FLAG_THINWALLED : 0;
     }
-    material.ior   = materialGUI.ior;
-    material.flags = (materialGUI.thinwalled) ? FLAG_THINWALLED : 0;
+    else {
+        material.flags =  FLAG_THINWALLED;
+        material.textureEye = 0;
+        material.textureHead = 0;
+        material.textureAlbedo = 0;
+        material.textureCutout = 0;
+        material.whitepercen = materialGUI.whitepercen;
+        material.scale_angle_rad = materialGUI.scale_angle_deg * (M_PIf / 180.0f);
+        material.ior = materialGUI.ior;
+        material.indexBSDF = materialGUI.indexBSDF;
+        material.melanin_ratio = materialGUI.melanin_ratio;
+        material.melanin_concentration = materialGUI.melanin_concentration;
+        material.melanin_ratio_disparity = materialGUI.melanin_ratio_disparity;
+        material.melanin_concentration_disparity = materialGUI.melanin_concentration_disparity;
+        material.absorption = (1.f - materialGUI.dye) * materialGUI.dye_concentration;
+        material.betaM = materialGUI.roughnessM;
+        material.betaN = materialGUI.roughnessN;
+
+    }
   }
 
   CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.materialDefinitions), m_materials.data(), sizeof(MaterialDefinition) * numMaterials, m_cudaStream) );
@@ -1039,10 +1129,22 @@ void Device::initMaterials(std::vector<MaterialGUI> const& materialsGUI)
 
 void Device::initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries)
 {
+   m_instances.clear();
+   m_instanceData.clear();
+   for (int i = 0; i < m_geometryData.size(); i++)
+   {
+       cuMemFree(m_geometryData[i].d_attributes);
+       cuMemFree(m_geometryData[i].d_indices);
+       cuMemFree(m_geometryData[i].d_gas);
+       cuMemFree(m_geometryData[i].d_strand_rand);
+       cuMemFree(m_geometryData[i].d_strand_i);
+       cuMemFree(m_geometryData[i].d_strand_info);
+   }
+   m_geometryData.clear();
+   m_geometryData.resize(numGeometries);
   activateContext();
   synchronizeStream();
-
-  m_geometryData.resize(numGeometries);
+  
 
   float matrix[12];
 
@@ -1053,13 +1155,11 @@ void Device::initScene(std::shared_ptr<sg::Group> root, const unsigned int numGe
   matrix[10] = 1.0f;
 
   InstanceData data(~0u, -1, -1);
-
   traverseNode(root, matrix, data);
-
   createTLAS();
-
   createHitGroupRecords();
 }
+
 
 
 void Device::updateCamera(const int idCamera, CameraDefinition const& camera)
@@ -1088,30 +1188,53 @@ void Device::updateMaterial(const int idMaterial, MaterialGUI const& materialGUI
   MY_ASSERT(idMaterial < m_materials.size());
   MaterialDefinition& material = m_materials[idMaterial];  // MaterialDefinition on the host in device layout.
 
+  MY_ASSERT(m_textureEye != nullptr);
+  MY_ASSERT(m_textureHead != nullptr);
   MY_ASSERT(m_textureAlbedo != nullptr);
   MY_ASSERT(m_textureCutout != nullptr);
 
-  const bool changeShader = (material.textureCutout != 0) != materialGUI.useCutoutTexture; // Cutout state wil be toggled?
-
-  material.textureAlbedo = (materialGUI.useAlbedoTexture) ? m_textureAlbedo->getTextureObject() : 0;
-  material.textureCutout = (materialGUI.useCutoutTexture) ? m_textureCutout->getTextureObject() : 0;
-  material.roughness     = materialGUI.roughness;
-  material.indexBSDF     = materialGUI.indexBSDF;
-  material.albedo        = materialGUI.albedo;
-  material.absorption = make_float3(0.0f); // Null means no absorption active.
-  if (0.0f < materialGUI.absorptionScale)
-  {
-    // Calculate the effective absorption coefficient from the GUI parameters.
-    // The absoption coefficient components must all be > 0.0f if absoprionScale > 0.0f.
-    // Prevent logf(0.0f) which results in infinity.
-    const float x = -logf(fmax(0.0001f, materialGUI.absorptionColor.x));
-    const float y = -logf(fmax(0.0001f, materialGUI.absorptionColor.y));
-    const float z = -logf(fmax(0.0001f, materialGUI.absorptionColor.z));
-    material.absorption = make_float3(x, y, z) * materialGUI.absorptionScale;
-    //std::cout << "absorption = (" << material.absorption.x << ", " << material.absorption.y << ", " << material.absorption.z << ")\n";
+  const bool changeShader = (material.textureHead != 0) != materialGUI.useHeadTexture; // Cutout state wil be toggled?
+  if (materialGUI.indexBSDF != INDEX_BCSDF_HAIR) {
+      material.textureEye = (materialGUI.useEyeTexture) ? m_textureEye->getTextureObject() : 0;
+      material.textureHead = (materialGUI.useHeadTexture) ? m_textureHead->getTextureObject() : 0;
+      material.textureAlbedo = (materialGUI.useAlbedoTexture) ? m_textureAlbedo->getTextureObject() : 0;
+      material.textureCutout = (materialGUI.useCutoutTexture) ? m_textureCutout->getTextureObject() : 0;
+      material.roughness = materialGUI.roughness;
+      material.indexBSDF = materialGUI.indexBSDF;
+      material.albedo = materialGUI.albedo;
+      material.absorption = make_float3(0.0f); // Null coefficient means no absorption active.
+      if (0.0f < materialGUI.absorptionScale)
+      {
+          // Calculate the effective absorption coefficient from the GUI parameters.
+          // The absorption coefficient components must all be > 0.0f if absorptionScale > 0.0f.
+          // Prevent logf(0.0f) which results in infinity.
+          const float x = -logf(fmax(0.0001f, materialGUI.absorptionColor.x));
+          const float y = -logf(fmax(0.0001f, materialGUI.absorptionColor.y));
+          const float z = -logf(fmax(0.0001f, materialGUI.absorptionColor.z));
+          material.absorption = make_float3(x, y, z) * materialGUI.absorptionScale;
+          //std::cout << "absorption = (" << material.absorption.x << ", " << material.absorption.y << ", " << material.absorption.z << ")\n";
+      }
+      material.ior = materialGUI.ior;
+      material.flags = (materialGUI.thinwalled) ? FLAG_THINWALLED : 0;
   }
-  material.ior   = materialGUI.ior;
-  material.flags = (materialGUI.thinwalled) ? FLAG_THINWALLED : 0;
+  else {
+      material.flags = (materialGUI.thinwalled) ? FLAG_THINWALLED : 0;
+      material.textureEye = 0;
+      material.textureHead = 0;
+      material.textureAlbedo = 0;
+      material.textureCutout = 0;
+      material.whitepercen = materialGUI.whitepercen;
+      material.scale_angle_rad = materialGUI.scale_angle_deg * (M_PIf / 180.0f);
+      material.ior = materialGUI.ior;
+      material.indexBSDF = materialGUI.indexBSDF;
+      material.melanin_ratio = materialGUI.melanin_ratio;
+      material.melanin_concentration = materialGUI.melanin_concentration;
+      material.melanin_ratio_disparity = materialGUI.melanin_ratio_disparity;
+      material.melanin_concentration_disparity = materialGUI.melanin_concentration_disparity;
+      material.absorption = ((1.f - materialGUI.dyeNeutralHT) * materialGUI.dyeNeutralHT_Concentration + (1.f - materialGUI.dye) * materialGUI.dye_concentration); //PSAN Add Dye neutral melanine
+      material.betaM = materialGUI.roughnessM;
+      material.betaN = materialGUI.roughnessN;
+  }
 
   // Copy only the one changed material. No need to trigger an update of the system data, because the m_systemData.materialDefinitions pointer itself didn't change.
   CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.materialDefinitions[idMaterial]), &material, sizeof(MaterialDefinition), m_cudaStream) );
@@ -1127,8 +1250,12 @@ void Device::updateMaterial(const int idMaterial, MaterialGUI const& materialGUI
       if (idMaterial == m_instanceData[inst].idMaterial)
       {
         const unsigned int idx = inst * NUM_RAYTYPES;
-
-        if (!materialGUI.useCutoutTexture)
+        
+        if (materialGUI.indexBSDF == INDEX_BCSDF_HAIR) {
+            memcpy(m_sbtRecordGeometryInstanceData[idx].header, m_sbtRecordHitRadianceCurve.header, OPTIX_SBT_RECORD_HEADER_SIZE);
+            memcpy(m_sbtRecordGeometryInstanceData[idx + 1].header, m_sbtRecordHitShadowCurve.header, OPTIX_SBT_RECORD_HEADER_SIZE);
+        }
+        else if (!materialGUI.useCutoutTexture)
         {
           // Only update the header to switch the program hit group. The SBT record data field doesn't change. 
           memcpy(m_sbtRecordGeometryInstanceData[idx    ].header, m_sbtRecordHitRadiance.header, OPTIX_SBT_RECORD_HEADER_SIZE);
@@ -1148,6 +1275,7 @@ void Device::updateMaterial(const int idMaterial, MaterialGUI const& materialGUI
     //CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_sbtRecordGeometryInstanceData), m_sbtRecordGeometryInstanceData.data(), sizeof(SbtRecordGeometryInstanceData) * NUM_RAYTYPES * numInstances, m_cudaStream) );
   }
 }
+
 
 
 static int2 calculateTileShift(const int2 tileSize)
@@ -1190,6 +1318,12 @@ void Device::setState(DeviceState const& state)
     m_isDirtySystemData = true;
   }
 
+  if (m_systemData.distribution != state.distribution)
+  {
+    m_systemData.distribution = state.distribution;
+    m_isDirtySystemData = true;
+  }
+
   if (m_systemData.samplesSqrt != state.samplesSqrt)
   {
     m_systemData.samplesSqrt = state.samplesSqrt;
@@ -1220,6 +1354,25 @@ void Device::setState(DeviceState const& state)
     m_systemData.envRotation = state.envRotation;
     m_isDirtySystemData = true;
   }
+  if (m_systemData.catchVariance != state.catchVariance)
+  {
+      // FIXME Implement free rotation with a rotation matrix.
+      m_systemData.catchVariance = state.catchVariance;
+      m_isDirtySystemData = true;
+  }
+  if (m_systemData.catchVariance != state.catchVariance)
+  {
+      // FIXME Implement free rotation with a rotation matrix.
+      m_systemData.catchVariance = state.catchVariance;
+      m_isDirtySystemData = true;
+  }
+  if (m_systemData.screenshotImageNum != state.screenshotImageNum)
+  {
+      // FIXME Implement free rotation with a rotation matrix.
+      m_systemData.screenshotImageNum = state.screenshotImageNum;
+      m_isDirtySystemData = true;
+  }
+
 
 #if USE_TIME_VIEW
   if (m_systemData.clockScale != state.clockFactor * CLOCK_FACTOR_SCALE)
@@ -1265,7 +1418,10 @@ void Device::traverseNode(std::shared_ptr<sg::Node> node, float matrix[12], Inst
 
       for (size_t i = 0; i < group->getNumChildren(); ++i)
       {
-        traverseNode(group->getChild(i), matrix, data);
+          if (group->getChild(i)->is_activated()) 
+          {
+              traverseNode(group->getChild(i), matrix, data);
+          }
       }
     }
     break;
@@ -1289,8 +1445,7 @@ void Device::traverseNode(std::shared_ptr<sg::Node> node, float matrix[12], Inst
       {
         data.idLight = idLight;  
       }
-
-      traverseNode(instance->getChild(), trafo, data);
+      traverseNode(instance->getChild(), trafo, data);      
     }
     break;
 
@@ -1300,6 +1455,15 @@ void Device::traverseNode(std::shared_ptr<sg::Node> node, float matrix[12], Inst
       data.idGeometry = createGeometry(geometry);
 
       createInstance(m_geometryData[data.idGeometry].traversable, matrix, data);
+    }
+    break;
+
+    case sg::NodeType::NT_CURVES:
+    {
+        std::shared_ptr<sg::Curves> geometry = std::dynamic_pointer_cast<sg::Curves>(node);
+        data.idGeometry = createHairGeometry(geometry);
+
+        createInstance(m_geometryData[data.idGeometry].traversable, matrix, data);
     }
     break;
   }
@@ -1316,10 +1480,10 @@ unsigned int Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
     return idGeometry; // Yes, reuse the GAS traversable.
   }
   
-  std::vector<TriangleAttributes> const& attributes = geometry->getAttributes();
+  std::vector<VertexAttributes> const& attributes = geometry->getAttributes();
   std::vector<unsigned int>       const& indices    = geometry->getIndices();
 
-  const size_t attributesSizeInBytes = sizeof(TriangleAttributes) * attributes.size();
+  const size_t attributesSizeInBytes = sizeof(VertexAttributes) * attributes.size();
 
   CUdeviceptr d_attributes;
 
@@ -1339,7 +1503,7 @@ unsigned int Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
   buildInput.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
 
   buildInput.triangleArray.vertexFormat        = OPTIX_VERTEX_FORMAT_FLOAT3;
-  buildInput.triangleArray.vertexStrideInBytes = sizeof(TriangleAttributes);
+  buildInput.triangleArray.vertexStrideInBytes = sizeof(VertexAttributes);
   buildInput.triangleArray.numVertices         = static_cast<unsigned int>(attributes.size());
   buildInput.triangleArray.vertexBuffers       = &d_attributes;
 
@@ -1399,12 +1563,149 @@ unsigned int Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
   return idGeometry;
 }
 
+unsigned int Device::createHairGeometry(std::shared_ptr<sg::Curves> geometry)
+{
+    const unsigned int idGeometry = geometry->getId();
+    MY_ASSERT(idGeometry < m_geometryData.size());
+
+    // Did we create a geometry acceleration structure (GAS) for this Triangles node already?
+    if (m_geometryData[idGeometry].traversable != 0)
+    {
+        return idGeometry; // Yes, reuse the GAS traversable.
+    }
+
+    std::vector<VertexAttributes> const& attributes = geometry->getAttributes();
+    std::vector<unsigned int>      const& indices = geometry->getIndices();
+    std::vector<unsigned int> const& segments = geometry->segments();
+    std::vector<float> const& thickness = geometry->getThickness();
+    std::vector<int> const& strandIs = geometry->strandIndices();
+    std::vector<uint2> const& strandInfo = geometry->strandInfo();
+    std::vector<float3> const& strandRand = geometry->strandRand();
+
+    const size_t attributesSizeInBytes = sizeof(VertexAttributes) * attributes.size();
+
+    CUdeviceptr d_attributes;
+
+    // DAR FIXME This all needs some Buffer class which maintains CUdeviceptr per Device, supporting separate allocations and peer-to-peer on multiple islands.
+    CU_CHECK(cuMemAlloc(&d_attributes, attributesSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_attributes, attributes.data(), attributesSizeInBytes, m_cudaStream));
+    /*
+    const size_t indicesSizeInBytes = sizeof(unsigned int) * indices.size();
+   
+    CUdeviceptr d_indices;
+
+    CU_CHECK(cuMemAlloc(&d_indices, indicesSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_indices, indices.data(), indicesSizeInBytes, m_cudaStream));
+    */
+    const size_t thicknessSizeInBytes = sizeof(float) * thickness.size();
+
+    CUdeviceptr d_thickness;
+
+    CU_CHECK(cuMemAlloc(&d_thickness, thicknessSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_thickness, thickness.data(), thicknessSizeInBytes, m_cudaStream));
+
+    const size_t segmentsSizeInBytes = sizeof(unsigned int) * segments.size();
+
+    CUdeviceptr d_segments;
+
+    CU_CHECK(cuMemAlloc(&d_segments, segmentsSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_segments, segments.data(), segmentsSizeInBytes, m_cudaStream));
+
+
+    const size_t strandRandSizeInBytes = sizeof(float3) * strandRand.size();
+
+    CUdeviceptr d_strandRand;
+
+    CU_CHECK(cuMemAlloc(&d_strandRand, strandRandSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_strandRand, strandRand.data(), strandRandSizeInBytes, m_cudaStream));
+
+    const size_t strandIsSizeInBytes = sizeof(int) * strandIs.size();
+
+    CUdeviceptr d_strandIs;
+
+    CU_CHECK(cuMemAlloc(&d_strandIs, strandIsSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_strandIs, strandIs.data(), strandIsSizeInBytes, m_cudaStream));
+
+    const size_t strandInfoSizeInBytes = sizeof(uint2) * strandInfo.size();
+
+    CUdeviceptr d_strandInfos;
+
+    CU_CHECK(cuMemAlloc(&d_strandInfos, strandInfoSizeInBytes));
+    CU_CHECK(cuMemcpyHtoDAsync(d_strandInfos, strandInfo.data(), strandInfoSizeInBytes, m_cudaStream));
+
+    OptixBuildInput buildInput = {};
+
+    buildInput.type = OPTIX_BUILD_INPUT_TYPE_CURVES;
+    buildInput.curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE;
+
+    buildInput.curveArray.numPrimitives = static_cast<unsigned int>(segments.size());
+    buildInput.curveArray.vertexBuffers = &d_attributes;
+    buildInput.curveArray.numVertices = static_cast<unsigned int>(attributes.size());
+    buildInput.curveArray.vertexStrideInBytes = sizeof(VertexAttributes);
+    buildInput.curveArray.widthBuffers = &d_thickness;
+    buildInput.curveArray.widthStrideInBytes = sizeof(float);
+    buildInput.curveArray.normalBuffers = 0;
+    buildInput.curveArray.normalStrideInBytes = 0;
+    buildInput.curveArray.indexBuffer = d_segments;
+    buildInput.curveArray.indexStrideInBytes = sizeof(unsigned int);
+
+    buildInput.curveArray.flag = OPTIX_GEOMETRY_FLAG_NONE;
+    buildInput.curveArray.primitiveIndexOffset = 0;
+
+    OptixAccelBuildOptions accelBuildOptions = {};
+
+    accelBuildOptions.buildFlags = OPTIX_BUILD_FLAG_NONE;
+    accelBuildOptions.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    OptixAccelBufferSizes accelBufferSizes;
+
+    OPTIX_CHECK(m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &buildInput, 1, &accelBufferSizes));
+
+    CUdeviceptr d_gas; // This holds the acceleration structure.
+
+    CU_CHECK(cuMemAlloc(&d_gas, accelBufferSizes.outputSizeInBytes));
+
+    CUdeviceptr d_tmp;
+
+    CU_CHECK(cuMemAlloc(&d_tmp, accelBufferSizes.tempSizeInBytes)); // Allocate the temp buffer last to reduce VRAM fragmentation.
+
+    OptixTraversableHandle traversableHandle = 0; // This is the handle which gets returned.
+
+    OPTIX_CHECK(m_api.optixAccelBuild(m_optixContext, m_cudaStream,
+        &accelBuildOptions, &buildInput, 1,
+        d_tmp, accelBufferSizes.tempSizeInBytes,
+        d_gas, accelBufferSizes.outputSizeInBytes,
+        &traversableHandle, nullptr, 0));
+
+    CU_CHECK(cuStreamSynchronize(m_cudaStream));
+
+    CU_CHECK(cuMemFree(d_tmp));
+    CU_CHECK(cuMemFree(d_thickness));
+    // Track the GeometryData to be able to set them in the SBT record GeometryInstanceData and free them on exit.
+    // FIXME Move this to the top and use the fields directly.
+    GeometryData geometryData;
+
+    geometryData.traversable = traversableHandle;
+    geometryData.d_attributes = d_attributes;
+    geometryData.d_indices = d_segments;//d_indices;
+    geometryData.numAttributes = attributes.size();
+    geometryData.numIndices = segments.size();
+    geometryData.d_gas = d_gas;
+    geometryData.d_strand_i = d_strandIs;
+    geometryData.d_strand_info = d_strandInfos;
+    geometryData.d_strand_rand = d_strandRand;
+
+    m_geometryData[idGeometry] = geometryData;
+
+    return idGeometry;
+}
+
 void Device::createInstance(const OptixTraversableHandle traversable, float matrix[12], InstanceData const& data)
 {
   MY_ASSERT(0 <= data.idMaterial);
 
-  OptixInstance instance = {};
-      
+  OptixInstance instance;
+  
   const unsigned int id = static_cast<unsigned int>(m_instances.size());
   memcpy(instance.transform, matrix, sizeof(float) * 12);
   instance.instanceId        = id; // User defined instance index, queried with optixGetInstanceId().
@@ -1472,9 +1773,14 @@ void Device::createHitGroupRecords()
   for (unsigned int i = 0; i < numInstances; ++i)
   {
     InstanceData const& data = m_instanceData[i];
+    
     const int idx = i * NUM_RAYTYPES; // idx == radiance ray, idx + 1 == shadow ray
-
-    if (m_materials[data.idMaterial].textureCutout == 0)
+   
+    if (m_materials[data.idMaterial].indexBSDF == INDEX_BCSDF_HAIR) {
+        memcpy(m_sbtRecordGeometryInstanceData[idx].header, m_sbtRecordHitRadianceCurve.header, OPTIX_SBT_RECORD_HEADER_SIZE);
+        memcpy(m_sbtRecordGeometryInstanceData[idx + 1].header, m_sbtRecordHitShadowCurve.header, OPTIX_SBT_RECORD_HEADER_SIZE);
+    }
+    else if (m_materials[data.idMaterial].textureHead == 0)
     {
       // Only update the header to switch the program hit group. The SBT record data field doesn't change. 
       memcpy(m_sbtRecordGeometryInstanceData[idx    ].header, m_sbtRecordHitRadiance.header, OPTIX_SBT_RECORD_HEADER_SIZE);
@@ -1485,7 +1791,7 @@ void Device::createHitGroupRecords()
       memcpy(m_sbtRecordGeometryInstanceData[idx    ].header, m_sbtRecordHitRadianceCutout.header, OPTIX_SBT_RECORD_HEADER_SIZE);
       memcpy(m_sbtRecordGeometryInstanceData[idx + 1].header, m_sbtRecordHitShadowCutout.header,   OPTIX_SBT_RECORD_HEADER_SIZE);
     }
-
+    
     m_sbtRecordGeometryInstanceData[idx    ].data.attributes    = m_geometryData[data.idGeometry].d_attributes;
     m_sbtRecordGeometryInstanceData[idx    ].data.indices       = m_geometryData[data.idGeometry].d_indices;
     m_sbtRecordGeometryInstanceData[idx    ].data.materialIndex = data.idMaterial;
@@ -1495,6 +1801,16 @@ void Device::createHitGroupRecords()
     m_sbtRecordGeometryInstanceData[idx + 1].data.indices       = m_geometryData[data.idGeometry].d_indices;
     m_sbtRecordGeometryInstanceData[idx + 1].data.materialIndex = data.idMaterial;
     m_sbtRecordGeometryInstanceData[idx + 1].data.lightIndex    = data.idLight;
+
+    if (m_materials[data.idMaterial].indexBSDF == INDEX_BCSDF_HAIR) {
+        m_sbtRecordGeometryInstanceData[idx].data.strand_i = m_geometryData[data.idGeometry].d_strand_i;
+        m_sbtRecordGeometryInstanceData[idx].data.strand_info = m_geometryData[data.idGeometry].d_strand_info;
+        m_sbtRecordGeometryInstanceData[idx].data.strand_rand = m_geometryData[data.idGeometry].d_strand_rand;
+
+        m_sbtRecordGeometryInstanceData[idx+1].data.strand_i = m_geometryData[data.idGeometry].d_strand_i;
+        m_sbtRecordGeometryInstanceData[idx+1].data.strand_info = m_geometryData[data.idGeometry].d_strand_info;
+        m_sbtRecordGeometryInstanceData[idx+1].data.strand_rand = m_geometryData[data.idGeometry].d_strand_rand;
+    }
   }
 
   CU_CHECK( cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&m_d_sbtRecordGeometryInstanceData), sizeof(SbtRecordGeometryInstanceData) * NUM_RAYTYPES * numInstances) );
@@ -1533,4 +1849,10 @@ bool Device::matchLUID(const char* luid, const unsigned int nodeMask)
     }
   }
   return true;
+}
+
+
+void Device::setVarianceCatching(const bool catchVariance)
+{
+    m_systemData.catchVariance = catchVariance;
 }

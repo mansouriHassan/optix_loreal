@@ -94,10 +94,11 @@ unsigned int RaytracerMultiGPUZeroCopy::render()
     // This pointer is used to communicate the shared pinned memory pointer between devices.
     // The first device calls allocates it when dirty and returns the pointer, all others reuse the same address on the host
     void *bufferZeroCopy = nullptr; 
+    void *varbufferZeroCopy = nullptr;
 
     for (size_t i = 0; i < m_activeDevices.size(); ++i)
     {
-      m_activeDevices[i]->render(m_iterationIndex, &bufferZeroCopy); // Interactive rendering. All devices work on the same iteration index.
+      m_activeDevices[i]->render(m_iterationIndex, &bufferZeroCopy, &varbufferZeroCopy); // Interactive rendering. All devices work on the same iteration index.
     }
     ++m_iterationIndex;
   }  
@@ -126,4 +127,16 @@ const void* RaytracerMultiGPUZeroCopy::getOutputBufferHost()
   }
 
   return m_activeDevices[0]->getOutputBufferHost();
+}
+
+const void* RaytracerMultiGPUZeroCopy::getOutputVarBufferHost()
+{
+    // Finish rendering on all other devices before accessing the shared pinned memory buffer.
+    for (size_t i = 1; i < m_activeDevices.size(); ++i)
+    {
+        m_activeDevices[i]->activateContext();
+        m_activeDevices[i]->synchronizeStream();
+    }
+
+    return m_activeDevices[0]->getOutputVarBufferHost();
 }

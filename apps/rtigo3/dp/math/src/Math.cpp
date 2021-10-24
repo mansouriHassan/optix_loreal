@@ -94,7 +94,7 @@ namespace dp
         {
           exponent = - exponent;
         }
-        f *= pow( 10.0f, float(exponent) );
+        f *= pow( 10.0f, exponent );
       }
     #if !defined( NDEBUG )
       float z = (float)atof( str.c_str() );

@@ -32,12 +32,12 @@ message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
 find_package(GLEW REQUIRED)
-find_package(CUDA 10.0 REQUIRED)
+find_package(OptiX71 REQUIRED)
+find_package(CUDA 11.3 REQUIRED)
 find_package(DevIL_1_8_0 REQUIRED)
 find_package(ASSIMP REQUIRED)
 
-# OptiX SDK 7.x versions are searched inside the top-level CMakeLists.txt.
-# Make the build work with either OptiX 7.3.0, 7.2.0, 7.1.0 or 7.0.0 releases
+# Make the build work with either OptiX 7.0.0 and 7.1.0 releases
 if (OptiX73_FOUND)
   set(OPTIX_INCLUDE_DIR "${OPTIX73_INCLUDE_DIR}")
 elseif (OptiX72_FOUND)
@@ -69,7 +69,7 @@ set( IMGUI
 # Not built as a library, just using classes and functions directly.
 # Asserts replaced with my own versions.
 set( NVPRO_MATH
-  # Math functions:
+  # Math fucntions:
   dp/math/Config.h
   dp/math/math.h
   dp/math/Matmnt.h
@@ -93,7 +93,6 @@ set( HEADERS
   inc/DeviceSingleGPU.h
   inc/MaterialGUI.h
   inc/MyAssert.h
-  inc/NVMLImpl.h
   inc/Options.h
   inc/Parser.h
   inc/Picture.h
@@ -107,6 +106,8 @@ set( HEADERS
   inc/Texture.h
   inc/Timer.h
   inc/TonemapperGUI.h
+  inc/HairFile.h
+  inc/Hair.h
 )
 
 set( SOURCES
@@ -120,7 +121,6 @@ set( SOURCES
   src/DeviceMultiGPUZeroCopy.cpp
   src/DeviceSingleGPU.cpp
   src/main.cpp
-  src/NVMLImpl.cpp
   src/Options.cpp
   src/Parallelogram.cpp
   src/Parser.cpp
@@ -137,6 +137,7 @@ set( SOURCES
   src/Texture.cpp
   src/Timer.cpp
   src/Torus.cpp
+  src/Hair.cpp
 )
 
 # Prefix the shaders with the full path name to allow stepping through errors with F8.
@@ -153,8 +154,9 @@ set( SHADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/light_sample.cu
   # BxDFs (BRDF, BTDF, BSDF implementations)
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bxdf_diffuse.cu
-  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bxdf_ggx_smith.cu
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bxdf_specular.cu
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bxdf_ggx_smith.cu
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bcsdf_hair.cu
 
   # Application kernels
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/compositor.cu
@@ -173,13 +175,14 @@ set( SHADERS_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/system_data.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vector_math.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vertex_attributes.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/curve.h
 )
 
 NVCUDA_COMPILE_PTX( SOURCES ${SHADERS}
                     DEPENDENCIES ${SHADERS_HEADERS}
                     TARGET_PATH "${PTX_TARGET_DIR}/rtigo3_core"
                     GENERATED_FILES PTX_SOURCES
-                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+                    NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
                   )
 
 source_group( "imgui"           FILES ${IMGUI} )
