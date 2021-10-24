@@ -86,7 +86,7 @@ Pre-requisites:
 * Change directory to the working folder:
 	- cd `<WORKING_DIRECTORY>`
 * Download the sources from the gitlab:
-	- git clone http://gitlab-ri.loreal.wans/applied-optics/optix-hair-7.1.git -b develop
+	- git clone https://github.com/mansouriHassan/optix_nvidia.git
 * Change directory to the folder containing the `sources`:
 	- cd optix-hair-7.1
 * Execute these commands to setup the 3rdparty library:
@@ -138,7 +138,7 @@ If you run a multi-GPU system, read the `system_rtigo3_dual_gpu_local.txt` for t
 
 # Example: building the sources in Debug mode
 
-* git clone http://gitlab-ri.loreal.wans/applied-optics/optix-hair-7.1.git -b develop
+* git clone https://github.com/mansouriHassan/optix_nvidia.git
 
 * cd /d optix-hair-7.1
 * call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
