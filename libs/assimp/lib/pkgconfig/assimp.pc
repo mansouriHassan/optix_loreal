@@ -1,0 +1,9 @@
+libdir=E:/OptixSrc/optix-hair-7.1/optix-hair-7.1/3rdparty/assimp/lib
+includedir=E:/OptixSrc/optix-hair-7.1/optix-hair-7.1/3rdparty/assimp/include
+
+Name: Assimp
+Description: Import various well-known 3D model formats in an uniform manner.
+Version: 5.0.1
+Libs: -L${libdir} -lassimp
+Libs.private:  
+Cflags: -I${includedir}

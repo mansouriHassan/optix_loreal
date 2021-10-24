@@ -1,0 +1,18 @@
+# Example of loading an OBJ model file format and instancing all individual geometries (not the model) inside the model using the current stack incrementally.
+# This cow.obj model has only one mesh though.
+
+albedo 0.333 0.69 0
+material default brdf_diffuse
+
+# The ASSIMP loader uses the name "DefaultMaterial" for OBJ models without MTL.
+# The albedo is read from the diffuse color in the assimp representation, which is grey 0.8 for an OBJ model without MTL.
+
+material Hair1 bsdf_hair
+
+material Hair2 bsdf_hair
+
+push
+scale .04 .04 .04
+translate 0.0 1.0 0.0
+model hair_half "w_straight.hair" Hair1 Hair2
+
