@@ -83,13 +83,13 @@ endif()
 
 message("Creating 3rdparty library folder for ${GENERATOR} ${BUILD_ARCH}")
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/optix-hair-7.1/3rdparty" CACHE PATH "default install path" FORCE)
+set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty" CACHE PATH "default install path" FORCE)
 
-set(DOWNLOAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/optix-hair-7.1/3rdparty/downloads")
-set(PATCH_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/optix-hair-7.1/3rdparty/patches")
+set(DOWNLOAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/downloads")
+set(PATCH_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/patches")
 
-set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/optix-hair-7.1/temp/sources")
-set(BUILD_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/optix-hair-7.1/temp/build/${MSVC_TOOLSET}")
+set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/temp/sources")
+set(BUILD_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/temp/build/${MSVC_TOOLSET}")
 
 message("Install prefix: ${CMAKE_INSTALL_PREFIX} ${ARGC} ${ARGV}")
 
