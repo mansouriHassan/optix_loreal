@@ -86,7 +86,7 @@ Pre-requisites:
 * Change directory to the working folder:
 	- cd `<WORKING_DIRECTORY>`
 * Download the sources from the gitlab:
-	- git clone https://github.com/mansouriHassan/optix_nvidia.git
+	- git clone https://github.com/mansouriHassan/optix_loreal.git
 * Change directory to the folder containing the `sources`:
 	- cd optix-hair-7.1
 * Execute these commands to setup the 3rdparty library:
@@ -138,22 +138,22 @@ If you run a multi-GPU system, read the `system_rtigo3_dual_gpu_local.txt` for t
 
 # Example: building the sources in Debug mode
 
-* git clone https://github.com/mansouriHassan/optix_nvidia.git
+* git clone https://github.com/mansouriHassan/optix_loreal.git
 
-* cd /d optix-hair-7.1
+* cd /d optix_loreal
 * call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
 * 3rdparty.cmd
 
 * Xcopy /E /I /Y .\libs\assimp 3rdparty\assimp
 * Xcopy /E /I /Y .\libs\devil_1_8_0 3rdparty\devil_1_8_0
 
-* mkdir OptixBuild
+* mkdir ..\OptixBuild
 * cmake -G "Visual Studio 16 2019" -A x64 -S . -B ..\OptixBuild
 * cd /d ..\OptixBuild
 * cmake --build . --config Debug
 
-* Xcopy /E /I /Y ..\optix-hair-7.1\dll .\bin\Debug
-* Xcopy /E /I /Y ..\optix-hair-7.1\data .\bin\Debug
+* Xcopy /E /I /Y ..\optix_loreal\dll .\bin\Debug
+* Xcopy /E /I /Y ..\optix_loreal\data .\bin\Debug
 
 * cd /d bin\Debug
 * rtigo3.exe -s system_rtigo3_single_gpu.txt -d scene_rtigo3_hair_half_head.txt
