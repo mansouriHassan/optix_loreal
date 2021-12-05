@@ -26,7 +26,7 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-project( rtigo3 )
+project( optix_hair )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 find_package(OpenGL REQUIRED)
@@ -180,7 +180,7 @@ set( SHADERS_HEADERS
 
 NVCUDA_COMPILE_PTX( SOURCES ${SHADERS}
                     DEPENDENCIES ${SHADERS_HEADERS}
-                    TARGET_PATH "${PTX_TARGET_DIR}/rtigo3_core"
+                    TARGET_PATH "${PTX_TARGET_DIR}/optix_hair_core"
                     GENERATED_FILES PTX_SOURCES
                     NVCC_OPTIONS "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
                   )
@@ -216,7 +216,7 @@ add_definitions(
   "-D_CRT_SECURE_NO_WARNINGS"
 )
 
-add_executable( rtigo3
+add_library( optix_hair SHARED
   ${IMGUI}
   ${NVPRO_MATH}
   ${HEADERS}
@@ -235,7 +235,7 @@ add_executable( rtigo3
 #message("ILUT_LIBRARIES    = " "${ILUT_LIBRARIES}")
 #message("ASSIMP_LIBRARIES  = " "${ASSIMP_LIBRARIES}")
 
-target_link_libraries( rtigo3
+target_link_libraries( optix_hair
   ${OPENGL_gl_LIBRARY}
   ${GLEW_LIBRARIES}
   ${GLFW_LIBRARIES}
@@ -247,8 +247,8 @@ target_link_libraries( rtigo3
 )
 
 if (UNIX)
-  target_link_libraries( rtigo3 dl )
+  target_link_libraries( optix_hair dl )
 endif()
 
-set_target_properties( rtigo3 PROPERTIES FOLDER "apps")
+set_target_properties( optix_hair PROPERTIES FOLDER "apps")
 
