@@ -35,6 +35,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include <thread>         // std::this_thread::sleep_for
+#include <chrono>         // std::chrono::seconds
 
 static Application* g_app = nullptr;
 
@@ -43,6 +45,42 @@ static void callbackError(int error, const char* description)
   std::cerr << "Error: "<< error << ": " << description << '\n';
 }
 
+void save_image(int second)
+{
+    while (true)
+    {
+        if(g_app != NULL)
+        {
+            if(g_app->looping == true)
+            {
+                std::cerr << "tmp = " << std::to_string(g_app->image_view) << std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(second));
+                g_app->screenshot(true);
+                g_app->image_view++;
+                if (g_app->image_view == 5)
+                {
+                    g_app->looping = false;
+                    exit(0);
+                }
+            }
+        }
+    }
+}
+
+void waits(int microsecond)
+{
+    while (true)
+    {
+        if (g_app != NULL)
+        {
+            if (g_app->looping == true)
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(microsecond));
+                g_app->screenshot(true);
+            }
+        }
+    }
+}
 
 static int runApp(Options const& options)
 {
@@ -103,7 +141,7 @@ static int runApp(Options const& options)
         g_app->guiNewFrame();
         //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
         //g_app->guiWindow();             // This application's GUI window rendering commands.
-        g_app->guiUserWindow();           // This application's GUI window renderind commands for user expert color.
+        g_app->saveImageWindow();           // This application's GUI window renderind commands for user expert color.
         g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
         finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
         g_app->display();               // OpenGL display always required to lay the background for the GUI.
@@ -129,6 +167,9 @@ static int runApp(Options const& options)
 
 int main(int argc, char *argv[])
 {
+  std::thread thread_save(&save_image, 10);   // starts running
+  std::thread thread_wait(&waits, 500);   // starts running
+
   glfwSetErrorCallback(callbackError);
 
 

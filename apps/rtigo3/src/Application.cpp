@@ -2115,7 +2115,355 @@ void Application::saveSettingToFile(std::string path)
     i_writeCmd.close();
 
 }
+void Application::saveImageWindow(bool* p_open)
+{
+    //ImGui::ShowDemoWindow();
 
+    static bool show_option_layout = false;
+    static bool show_absolue_layout = false;
+
+    if (show_option_layout)             ShowOptionLayout(&show_option_layout);
+    if (show_absolue_layout)            ShowAbsolueLayout(&show_absolue_layout);
+
+    bool refresh = false;
+
+    static bool no_close = false;
+    static bool no_move = true;
+    static bool no_collapse = true;
+
+    //static bool no_custom = false; //PSAN test
+
+    ImGuiTreeNodeFlags custom_flag = 0; // PSAN test 
+    ImGuiWindowFlags window_flags = 0;
+
+    if (no_close)     p_open = NULL; // Don't pass our bool* to Begin
+    if (no_move)     window_flags |= ImGuiWindowFlags_NoMove;
+    if (no_collapse)  window_flags |= ImGuiWindowFlags_NoCollapse;
+
+    //if (no_custom) custom_flag |= ImGuiTreeNodeFlags_OpenOnDoubleClick; // PSAN test
+
+    ImGui::SetNextWindowSize(ImVec2(550, 680), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("User", p_open, window_flags))
+    {
+        // Early out if the window is collapsed, as an optimization.
+        ImGui::End();
+        return;
+    }
+
+    //ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.65f);    // 2/3 of the space for widget and 1/3 for labels
+    ImGui::PushItemWidth(-140);                                 // Right align, keep 140 pixels for labels
+
+
+    bool clicked = false;
+    static const char* current_item_colorswatch_value = "";
+    ColorSwitch* current_item_colorswatch = NULL;
+    MaterialGUI* materialGUI1 = &m_materialsGUI.at(m_mapMaterialReferences.find(current_item_model->material1Name)->second);
+    static int materialGUI1ID = m_mapMaterialReferences.find(current_item_model->material1Name)->second;
+    static int materialGUI2ID = materialGUI1ID;
+
+    MaterialGUI* materialGUI2 = materialGUI1;
+    if (current_item_model->material1Name != current_item_model->material2Name)
+        materialGUI2 = &m_materialsGUI.at(m_mapMaterialReferences.find(current_item_model->material2Name)->second);
+
+    if (ImGui::Button("Save Images", ImVec2(100, 20)))
+    {
+        image_view = 0;
+        looping = true;
+        //std::thread th(save_image_handler, this);   // starts running
+        //save_image(NULL);
+    }
+    
+    if (ImGui::CollapsingHeader("Material", true))
+    {
+        int i = 0;
+        for (; i < static_cast<int>(m_materialsGUI.size()); ++i)
+        {
+            bool changed = false;
+
+            MaterialGUI& materialGUI = m_materialsGUI[i];
+
+            if ((materialGUI.name.find("Hair") != std::string::npos)
+                && ImGui::TreeNode((void*)(intptr_t)i, "%s", m_materialsGUI[i].name.c_str()))
+            {
+                if (ImGui::Combo("BxDF Type", (int*)&materialGUI.indexBSDF, "BRDF Diffuse\0BRDF Specular\0BSDF Specular\0BRDF GGX Smith\0BSDF GGX Smith\0BSDF Hair\0\0"))
+                {
+                    changed = true;
+                }
+                if (materialGUI.indexBSDF == INDEX_BCSDF_HAIR)
+                {
+                    float pasAffinage(0.25f);
+                    ImVec2 sz(20, 20);// size button + -   
+
+                    ImGui::PushID("HT");
+                    if (ImGui::SliderInt("HT", &materialGUI.HT, 1, 10))
+                    {
+                        materialGUI.melanin_concentration = m_melanineConcentration[materialGUI.HT - 1];
+                        materialGUI.dyeNeutralHT_Concentration = m_dyeNeutralHT_Concentration[materialGUI.HT - 1];
+                        materialGUI.dyeNeutralHT = m_dyeNeutralHT[materialGUI.HT - 1];
+                        materialGUI.melanin_ratio = m_melanineRatio[materialGUI.HT - 1];
+                        changed = true;
+                    }
+                    ImGui::SameLine();
+
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.dyeNeutralHT, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+
+                    //PSAN VERT ROUGE 
+                    ImGui::Text("Vert - Rouge");
+                    ImGui::PushID("Vert");
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.vert, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+                    ImGui::SameLine();
+
+                    ImGui::PushID("Vert-Rouge");
+                    char* vertRougeIndex[] = { "70","77","7","07","","06","6","66","60" };
+                    ImGui::PushItemWidth(250);
+                    if (ImGui::SliderInt("", &materialGUI.int_VertRouge_Concentration, 0, 8, vertRougeIndex[materialGUI.int_VertRouge_Concentration]))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::PopID();
+
+                    ImGui::PushID("Rouge");
+                    ImGui::SameLine();
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.red, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+
+                    // PSAN CENDRE CUIVRE
+                    ImGui::Text("Cendre - Cuivre");
+                    ImGui::PushID("Bleu");
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.cendre, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+                    ImGui::SameLine();
+                    ImGui::PushID("Cendre-Cuivre");
+                    ImGui::PushItemWidth(250);
+
+                    char* CendreCuivreIndex[] = { "10","11","1","01","","04","4","44","40" };
+                    if (ImGui::SliderInt("", &materialGUI.int_CendreCuivre_Concentration, 0, 8, CendreCuivreIndex[materialGUI.int_CendreCuivre_Concentration]))
+                    {
+
+                        changed = true;
+
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::PopID();
+
+
+                    ImGui::PushID("Cuivre");
+                    ImGui::SameLine();
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.cuivre, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+
+                    // PSAN IRISE DORE
+                    ImGui::Text("Irise - Dore");
+                    ImGui::PushID("Irise");
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.irise, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+
+                    ImGui::SameLine();
+                    ImGui::PushID("Irise-Dore");
+                    char* IriseDoreIndex[] = { "20","22","2","02","","03","3","33","30" };
+                    ImGui::PushItemWidth(250);
+                    if (ImGui::SliderInt("", &materialGUI.int_IriseDore_Concentration, 0, 8, IriseDoreIndex[materialGUI.int_IriseDore_Concentration]))
+                    {
+
+                        changed = true;
+
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::PopID();
+
+                    ImGui::PushID("Dore");
+                    ImGui::SameLine();
+                    if (ImGui::ColorEdit3("", (float*)&materialGUI.doree, ImGuiColorEditFlags_NoInputs))
+                    {
+                        changed = true;
+                    }
+                    ImGui::PopID();
+                }
+
+                if (changed)
+                {
+                    updateDYEinterface(materialGUI);
+                    updateDYE(materialGUI);
+                    updateDYEconcentration(materialGUI);
+                    updateHT(materialGUI);
+
+                    m_raytracer->updateMaterial(i, materialGUI);
+                    refresh = true;
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+    if (ImGui::CollapsingHeader("Dynamic settings"))
+    {
+        bool changed = false;
+        const char* current_HDR_value;
+        HDRSwitch* current_item_HDR = NULL;
+        for (int i = 0; i < m_HDR.size(); i++)
+        {
+            if (std::strcmp(m_HDR[i].file_name.c_str(), m_environment.c_str()) == 0)
+            {
+                current_item_HDR = &m_HDR[i];
+                current_HDR_value = m_HDR[i].name.c_str();
+                break;
+            }
+        }
+        if (current_item_model->material1Name != current_item_model->material2Name)
+            materialGUI2 = &m_materialsGUI.at(m_mapMaterialReferences.find(current_item_model->material2Name)->second);
+
+
+        if (ImGui::BeginCombo("Hair type", current_item_model_value))
+        {
+            for (int n = 0; n < m_models.size(); n++)
+            {
+                bool is_selected = (current_item_model == &m_models[n]); // You can store your selection however you want, outside or inside your objects
+                if (ImGui::Selectable(m_models[n].name.c_str(), is_selected))
+                {
+                    if (current_item_model != &m_models[n])
+                    {
+                        m_scene->removeCurvesChild();
+
+                        std::string HairModel = current_item_model->file_name;
+                        convertPath(HairModel);
+                        std::ostringstream keyGeometry_delete1;
+                        std::ostringstream keyGeometry_delete2;
+                        if (current_item_model->material1Name == current_item_model->material2Name)
+                            keyGeometry_delete1 << current_item_model->map_identifier;
+                        else
+                        {
+                            keyGeometry_delete1 << current_item_model->map_identifier << "_half_1";
+                            keyGeometry_delete2 << current_item_model->map_identifier << "_half_2";
+                        }
+                        std::map<std::string, unsigned int>::const_iterator itg_delete1 = m_mapGeometries.find(keyGeometry_delete1.str());
+                        if (itg_delete1 != m_mapGeometries.end())
+                        {
+                            auto geometry_id = itg_delete1->second;
+                            for (int i = 0; i < m_geometries.size(); i++)
+                            {
+                                if (m_geometries[i].get()->getId() == geometry_id)
+                                {
+                                    m_geometries.erase(m_geometries.begin() + i);
+                                    m_mapGeometries.erase(keyGeometry_delete1.str());
+                                    m_idGeometry--;
+                                }
+                            }
+                        }
+                        if (current_item_model->material1Name != current_item_model->material2Name)
+                        {
+                            std::map<std::string, unsigned int>::const_iterator itg_delete2 = m_mapGeometries.find(keyGeometry_delete2.str());
+                            if (itg_delete2 != m_mapGeometries.end())
+                            {
+                                auto geometry_id = itg_delete2->second;
+                                for (int i = 0; i < m_geometries.size(); i++)
+                                {
+                                    if (m_geometries[i].get()->getId() == geometry_id)
+                                    {
+                                        m_geometries.erase(m_geometries.begin() + i);
+                                        m_mapGeometries.erase(keyGeometry_delete2.str());
+                                        m_idGeometry--;
+                                    }
+                                }
+                            }
+                        }
+
+                        current_item_model_value = m_models[n].name.c_str();
+                        current_item_model = &m_models[n];
+
+                        HairModel = current_item_model->file_name;
+                        convertPath(HairModel);
+                        std::ostringstream keyGeometry1;
+                        std::ostringstream keyGeometry2;
+                        if (current_item_model->material1Name == current_item_model->material2Name)
+                            keyGeometry1 << current_item_model->map_identifier;
+                        else
+                        {
+                            keyGeometry1 << current_item_model->map_identifier << "_half_1";
+                            keyGeometry2 << current_item_model->map_identifier << "_half_2";
+                        }
+
+                        materialGUI1 = &(m_materialsGUI.at(m_mapMaterialReferences.find(current_item_model->material1Name)->second));
+                        materialGUI2 = &(m_materialsGUI.at(m_mapMaterialReferences.find(current_item_model->material2Name)->second));
+
+                        std::shared_ptr<sg::Curves> geometry_left;
+                        std::map<std::string, unsigned int>::const_iterator itg1 = m_mapGeometries.find(keyGeometry1.str());
+                        if (itg1 == m_mapGeometries.end())
+                        {
+                            m_mapGeometries[keyGeometry1.str()] = m_idGeometry;
+                            geometry_left = std::make_shared<sg::Curves>(m_idGeometry++);
+                            const char* file = current_item_model->file_name.c_str();
+                            if (current_item_model->material1Name != current_item_model->material2Name)
+                                geometry_left->createHairFromFile(file, true);
+                            else
+                                geometry_left->createHairFromFile(file);
+                            m_geometries.push_back(geometry_left);
+                        }
+                        else
+                            geometry_left = std::dynamic_pointer_cast<sg::Curves>(m_geometries[itg1->second]);
+                        appendInstance(m_scene, geometry_left, curMatrix, current_item_model->material1Name, m_idInstance);
+
+                        if (current_item_model->material1Name != current_item_model->material2Name)
+                        {
+                            std::shared_ptr<sg::Curves> geometry_right;
+                            std::map<std::string, unsigned int>::const_iterator itg2 = m_mapGeometries.find(keyGeometry2.str());
+                            if (itg2 == m_mapGeometries.end())
+                            {
+                                m_mapGeometries[keyGeometry2.str()] = m_idGeometry;
+                                geometry_right = std::make_shared<sg::Curves>(m_idGeometry++);
+                                const char* file = current_item_model->file_name.c_str();
+                                geometry_right->createHairFromFile(file, false);
+                                m_geometries.push_back(geometry_right);
+                            }
+                            else
+                                geometry_right = std::dynamic_pointer_cast<sg::Curves>(m_geometries[itg2->second]);
+                            appendInstance(m_scene, geometry_right, curMatrix, current_item_model->material2Name, m_idInstance);
+                        }
+                        m_raytracer->initMaterials(m_materialsGUI);
+                        m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene
+                        refresh = true;
+                        m_isValid = true;
+                        m_raytracer->updateCamera(0, m_cameras[0]);
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        
+    }
+    
+    ImGui::PopItemWidth();
+    ImGui::End();
+
+    if (refresh)
+    {
+        restartRendering();
+        if (clicked)
+        {
+            current_item_colorswatch_value = m_materialsColor.back().name.c_str();
+            current_item_colorswatch = &m_materialsColor.back();
+        }
+    }
+}
 void Application::guiUserWindow(bool* p_open)
 {
     //ImGui::ShowDemoWindow();
