@@ -29,7 +29,7 @@ That example is the same as intro_driver with additional code demonstrating the 
 All three intro examples implement the exact same rendering and runtime generated scene data and make use of a single device (ordinal 0) only.
 (If you have multiple NVIDIA devices installed you can switch between them, by using the CUDA_VISIBLE_DEVICES environment variable.)
 
-*rtigo3* is meant as a testbed for multi-GPU rendering ditribution and OpenGL interoperability.
+*optix_hair* is meant as a testbed for multi-GPU rendering ditribution and OpenGL interoperability.
 There are different multi-GPU strategies implemented (single GPU, dual GPU peer-to-peer, multi-GPU pinned memory, multi-GPU local distribution and compositing). 
 Then there are three different OpenGL interop modes (none, pixel buffer object, direct texture mapping).
 
@@ -45,7 +45,7 @@ Peer-to-peer device resource sharing can effectively double the scene size loade
 Texture sharing comes at a moderate performance cost while geometry acceleration structure sharing can be up to two times slower, which is reasonably fast given the bandwidth difference between NVLINK and VRAM transfers. Still a lot better than not being able to load a scene at all on a single board.
 The Raytracer class got more smarts over the Device class because the resource distribution decisions need to happen above the devices.
 
-This example is derived from rtigo3, but uses only one rendering strategy ("local-copy") and is solely meant to run multi-GPU NVLINK systems, because the local-copy rendering distribution of sub-frames is always doing the compositing step.
+This example is derived from optix_hair, but uses only one rendering strategy ("local-copy") and is solely meant to run multi-GPU NVLINK systems, because the local-copy rendering distribution of sub-frames is always doing the compositing step.
 The scene description format has been slightly changed to allow different albedo and/or cutout opacity textures per material reference.
 
 **User Interaction inside the examples**:
@@ -55,15 +55,15 @@ The scene description format has been slightly changed to allow different albedo
 * Mouse Wheel = Zoom (1 - 179 degrees field of view possible)
 * SPACE  = Toggle GUI display on/off
 
-Additionally in rtigo3:
+Additionally in optix_hair:
 * S = Saves the current system description settings into a new file (e.g. to save camera positions)
 * P = Saves the current tonemapped output buffer to a new PNG file. (Destination folder must exist! Check the `prefixScreenshot` option inside the *system* text files.)
 * H = Saves the current linear output buffer to a new HDR file.
 
 # Building
 
-The application framework for all these examples uses GLFW for the window management, GLEW 2.1.0 for the OpenGL functions, DevIL 1.8.0 (optionally 1.7.8) for all image loading and saving, local ImGUI code for the simple GUI, and for *rtigo3*, ASSIMP to load triangle mesh geometry. 
-GLEW 2.1.0 is required for *rtigo3* for the UUID matching of devices between OpenGL and CUDA which requires a specific OpenGL extension not supported by GLEW 2.0.0. The intro examples compile with GLEW 2.0.0 though.
+The application framework for all these examples uses GLFW for the window management, GLEW 2.1.0 for the OpenGL functions, DevIL 1.8.0 (optionally 1.7.8) for all image loading and saving, local ImGUI code for the simple GUI, and for *optix_hair*, ASSIMP to load triangle mesh geometry. 
+GLEW 2.1.0 is required for *optix_hair* for the UUID matching of devices between OpenGL and CUDA which requires a specific OpenGL extension not supported by GLEW 2.0.0. The intro examples compile with GLEW 2.0.0 though.
 
 The individual applications' CMakeLists.txt files are currently setup for OptiX 7.0.0, but they compile and work with OptiX 7.1.0 as well, if the `find_package(OptiX7 REQUIRED)` is replaced with `find_package(OptiX71 REQUIRED)`
 
@@ -126,15 +126,15 @@ Open a command prompt and change directory to the folder with the executables (s
 
 
 The following scene description uses the [Buggy.gltf](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Buggy/glTF) model from Khronos which is not contained inside this source code repository.
-The link is also listed inside the `scene_rtigo3_hair_half_head.txt` file.
+The link is also listed inside the `scene_optix_hair_hair_half_head.txt` file.
 
 * Change directory to the bin folder in the building directory:
 	- cd /d bin\\`<build_mod>`
-* `rtigo3.exe -s system_rtigo3_single_gpu.txt -d scene_rtigo3_hair_half_head.txt`
+* `optix_hair.exe -s system_optix_hair_single_gpu.txt -d scene_optix_hair_hair_half_head.txt`
 
-If you run a multi-GPU system, read the `system_rtigo3_dual_gpu_local.txt` for the modes of operation and interop settings.
+If you run a multi-GPU system, read the `system_optix_hair_dual_gpu_local.txt` for the modes of operation and interop settings.
 
-* `rtigo3.exe -s system_rtigo3_dual_gpu_local.txt -d scene_rtigo3_hair_half_head.txt`
+* `optix_hair.exe -s system_optix_hair_dual_gpu_local.txt -d scene_optix_hair_hair_half_head.txt`
 
 # Example: building the sources in Debug mode
 
@@ -156,7 +156,7 @@ If you run a multi-GPU system, read the `system_rtigo3_dual_gpu_local.txt` for t
 * Xcopy /E /I /Y ..\optix_loreal\data .\bin\Debug
 
 * cd /d bin\Debug
-* rtigo3.exe -s system_rtigo3_single_gpu.txt -d scene_rtigo3_hair_half_head.txt
+* optix_hair.exe -s system_optix_hair_single_gpu.txt -d scene_optix_hair_hair_half_head.txt
 
 # Pull Requests
 

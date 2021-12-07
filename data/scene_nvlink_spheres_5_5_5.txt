@@ -1,6 +1,6 @@
 # Note that the spheres are generated with increasing numbers of triangles
 # to avoid the automatic instancing of identical geometry implemented
-# inside the rtigo3 or nvlink_shared examples.
+# inside the optix_hair or nvlink_shared examples.
 # The smallest sphere has one million triangles!
 
 material default brdf_diffuse
