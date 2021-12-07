@@ -175,6 +175,11 @@ public:
 
   bool is_fullscreen() { return m_is_fullscreen; }
 
+  void saveImageWindow(bool* p_open = NULL);
+  bool screenshot(const bool tonemap);
+  bool looping = false;
+  int image_view = 2;
+
 private:
   bool loadSystemDescription(std::string const& filename);
   bool saveSystemDescription();
@@ -187,7 +192,6 @@ private:
   void updateHT(MaterialGUI& materialGUI); //PSAN TEST update HT
   void updateDYEinterface(MaterialGUI& materialGUI);
 
-  bool screenshot(const bool tonemap);
   bool screenshot(const bool tonemap, std::string name);
   bool screenshot360();
   bool loading_bar(const float progress, const int bar_width = 70);
