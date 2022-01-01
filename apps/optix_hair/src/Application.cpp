@@ -84,6 +84,8 @@ Application::Application(GLFWwindow* window, Options const& options)
     , m_current_camera(0)
     , m_lock_camera(0)
     , nbQuickSaveValue(0)
+    , image_view(4)
+    , looping(true)
 {
   try
   {
@@ -146,7 +148,12 @@ Application::Application(GLFWwindow* window, Options const& options)
     m_tonemapperGUI.brightness      = 1.0f;
 
     // System wide parameters are loaded from this file to keep the number of command line options small.
-    const std::string filenameSystem = options.getSystem();
+    std::string filenameSystem = "";
+    if(options.getSystem().empty()) {
+        filenameSystem = "system_optix_hair_single_gpu.txt";
+    } else {
+        filenameSystem = options.getSystem();
+    }
     if (!loadSystemDescription(filenameSystem))
     {
       std::cerr << "ERROR: Application() failed to load system description file " << filenameSystem << '\n';
@@ -339,7 +346,13 @@ Application::Application(GLFWwindow* window, Options const& options)
     createLights();
     
     // Load the scene description file and generate the host side scene.
-    const std::string filenameScene = options.getScene();
+    std::string filenameScene = "";
+    if (options.getScene().empty()) {
+        filenameScene = "system_optix_hair_single_gpu.txt";
+    }
+    else {
+        filenameScene = options.getScene();
+    }
     if (!loadSceneDescription(filenameScene))
     {
       std::cerr << "ERROR: Application() failed to load scene description file " << filenameScene << '\n';
@@ -2116,6 +2129,49 @@ void Application::saveSettingToFile(std::string path)
 
 }
 
+void Application::changeView(const int view)
+{
+    switch (view)
+    {
+    case 0:
+        m_camera.m_phi = 0.251406f;
+        m_camera.m_theta = 0.570703f;
+        m_camera.m_fov = 32.f;
+        m_camera.m_distance = 10.f;
+        break;
+    case 1:
+        m_camera.m_phi = 0.251406f;
+        m_camera.m_theta = 0.570703f;
+        m_camera.m_fov = 12.f;
+        m_camera.m_distance = 10.f;
+        break;
+    case 2:
+        m_camera.m_phi = 0.981875f;
+        m_camera.m_theta = 0.535547;
+        m_camera.m_fov = 32.f;
+        m_camera.m_distance = 10.f;
+        break;
+    case 3:
+        m_camera.m_phi = 0.5092198f;
+        m_camera.m_theta = 0.521875f;
+        m_camera.m_fov = 29.f;
+        m_camera.m_distance = 10.f;
+        break;
+    case 4:
+        m_camera.m_phi = 0.757265f;
+        m_camera.m_theta = 0.719141f;
+        m_camera.m_fov = 29.f;
+        m_camera.m_distance = 10.f;
+        break;
+    default:
+        m_camera.m_phi = 0.251406f;
+        m_camera.m_theta = 0.570703f;
+        m_camera.m_fov = 32.f;
+        m_camera.m_distance = 10.f;
+        break;
+    }
+    m_camera.markDirty(true);
+}
 void Application::guiUserWindow(bool* p_open)
 {
     //ImGui::ShowDemoWindow();
@@ -2177,6 +2233,7 @@ void Application::guiUserWindow(bool* p_open)
     }
     if (ImGui::CollapsingHeader("Camera", true))
     {
+        
         int tmp = m_camera.pov;
         ImGui::RadioButton("Center", &(m_camera.pov), 0);
         ImGui::SameLine();
@@ -2186,8 +2243,12 @@ void Application::guiUserWindow(bool* p_open)
         ImGui::RadioButton("Left", &(m_camera.pov), 2);
         ImGui::SameLine();
         ImGui::RadioButton("Right", &(m_camera.pov), 3);
+        
+
         if (m_camera.pov != tmp)
         {
+            changeView(m_camera.pov);
+            /*
             switch (m_camera.pov)
             {
             case 0:
@@ -2228,8 +2289,8 @@ void Application::guiUserWindow(bool* p_open)
                 break;
             }
             m_camera.markDirty(true);
+            */
         }
-
     }
     if (ImGui::CollapsingHeader("Material", true))
     {

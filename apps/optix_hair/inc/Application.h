@@ -1,4 +1,4 @@
-/* 
+﻿/* 
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -175,6 +175,11 @@ public:
 
   bool is_fullscreen() { return m_is_fullscreen; }
 
+  void changeView(const int view);
+
+  int image_view;
+  bool looping;
+
 private:
   bool loadSystemDescription(std::string const& filename);
   bool saveSystemDescription();
@@ -219,7 +224,6 @@ private:
   void chargeSettingsFromFile(std::string Path);
   void saveSettingToFile(std::string path);
 
-
 private:
   GLFWwindow* m_window;
   bool m_is_fullscreen{ false };
@@ -239,7 +243,7 @@ private:
   std::vector<int>         m_area_light;       // "light"
   int         m_miss;        // "miss"
   std::string m_environment; // "envMap"
-  int         m_interop;     // "interop"�// 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
+  int         m_interop;     // "interop"´// 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
   bool        m_present;     // "present"
   bool        m_catchVariance;     // 0 = no variance calculation, 1 = variance calculation
   

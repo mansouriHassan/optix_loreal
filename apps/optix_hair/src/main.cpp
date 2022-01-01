@@ -57,6 +57,24 @@ void start_server()
     }
 }
 
+void change_view(int second)
+{
+    while (true)
+    {
+        if (g_app != NULL)
+        {
+            do {
+                std::this_thread::sleep_for(std::chrono::seconds(second));
+                if (g_app->image_view >= 5)
+                {
+                    g_app->image_view = 0;
+                }
+                g_app->image_view++;
+            } while (!g_app->looping);
+        }
+    }
+}
+
 static int runApp(Options const& options)
 {
   int width  = std::max(1, options.getWidth());
@@ -144,6 +162,8 @@ int main(int argc, char *argv[])
 {
   socket_server = Socket::getInstance();
   std::thread thread_server(&start_server);   // start server
+
+  std::thread thread_change(&change_view, 10);   // starts change view thread
 
   glfwSetErrorCallback(callbackError);
 
