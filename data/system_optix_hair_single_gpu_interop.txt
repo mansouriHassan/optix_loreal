@@ -1,24 +1,30 @@
-# This nvlink_shared system option file handles multiple settings of the same option, the last one wins!
+# This optix_hair system option file handles multiple settings of the same option, the last one wins!
 
-# There is only one rendering strategy implemented in this renderer which matches the optix_hair strategy 3:
+# Define the raytracer's rendering strategy
+# 0 = Interactive Single-GPU, with or without OpenGL interop.
+#     Full frame accumulation in local memory, read to host buffer when needed.
+# 1 = Interactive Multi-GPU Zero Copy, no OpenGL interop.
+#     Tiled rendering with tileSize blocks in a checkered pattern distributed to all enabled GPUs directly to pinned memory on the host.
+#     Works with any number of enabled devices.
+# 2 = Interactive Multi-GPU Peer Access
+#     Tiled rendering with tileSize blocks in a checkered pattern evenly distributed to all enabled GPUs.
+#     The full image is allocated only on the first device, the peer devices directly render into the shared buffer.
+#     This is not going to work with more than one island in the active devices.
 # 3 = Interactive Multi-GPU rendering into local GPU buffers of roughly 1/activeDevices size.
 #     Tiled rendering with tileSize blocks in a checkered pattern evenly distributed to all enabled GPUs.
 #     The full image is composited on the first device resp. the OpenGL interop device.
 #     The local data from other devices (not full resolution) is copied to that main device and composited by a native CUDA kernel.
+# 4 = Multi-GPU Tiled Final Frame rendering.
+#     Tiled rendering with tileSize blocks but all samples per pixels in one launch with different tiles distributed to all enabled GPUs.
+#     The full image is allocated in pinned memory and used by a separate kernel to accumulate and write the final tiles into the shared buffer.
 
-# This setting is ignored by the nvlink_shared parser.
-strategy 3
+strategy 0
 
 # The devicesMask indicates which devices should be used in a 32-bit bitfield.
 # The default is 255 which means 8 bits set so all boards in an RTX server.
 # The application will only use the boards actually visible.
 
-devicesMask 3
-
-# The arenaSize defines the default allocation size of each Arena in mega bytes.
-# Default is 64 MB, minimum possible is 1 MB.
-
-arenaSize 256
+devicesMask 1
 
 # Use different strategies to update the OpenGL display texture.
 # The performance effect of interop 2 is only really visible interactive rendering (-m 0) and present 1.
@@ -28,7 +34,7 @@ arenaSize 256
 #     Not available with multi-GPU zero copy strategy because the buffer resides in host memory then.
 #     For multi-GPU peer access the renderer cannot directly render with peer-to-peer into the OpenGL PBO and needs a separate shared buffer for rendering.
 
-interop 0
+interop 1
 
 # Controls if every rendered image or final tile should be displayed (1) or only once per second (0) to save PCI-E bandwidth.
 # 0 = present only once per second (except for the first half second which accumulates)
@@ -82,6 +88,7 @@ light 0
 # Path lengths minimum and maximum.
 # Minimum path length before Russian Roulette kicks in.
 # Maximum path length before termination.
+# Maximum number of volume scattering events.
 # Set min >= max to disable Russian Rouelette.
 # pathLengths <int> <int> in range [0, 100]
 
@@ -108,23 +115,21 @@ lensShader 0
 
 # Camera center of interest.
 # Absolute x, y, z coordinates in scene units (meters)
-# This setting is for the scene_nvlink_spheres_5_5_5.txt
 
-center 2.7 4.8 5.5
+center 0 1 0
 
 # Camera orientation relative to center of interest and projection
 # theta [-1.0f, 1.0f]
 # phi   [0.0f, 1.0f]
 # yfov in degrees [1, 179]
 # distance from center of interest [0.0f, inf] in meters
-# This setting is for the scene_nvlink_spheres_5_5_5.txt
 
-camera 0.57 0.65 45 23
+camera 0.815 0.6 45 10
 
 # Path with an existing(!) folder and optional partial filename prefix which should receive the screenshots. 
 # If this is just a folder, end it with '/'
 
-prefixScreenshot "./screenshots/nvlink_shared"
+prefixScreenshot "./screenshots/optix_hair"
 
 # Tonemapper settings.
 # Neutral tonemapper GUI settings showing the linear image:

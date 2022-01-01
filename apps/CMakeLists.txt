@@ -7,9 +7,9 @@ cmake_minimum_required(VERSION 2.8)
 
 # More advanced test application specifically designed to compare different multi-GPU and OpenGL interop strategies.
 # This is meant as multi-GPU rendering distribution testbed in a simple viewer-like application foundation.
-add_subdirectory( rtigo3 )
+add_subdirectory( optix_hair )
 
 # Multi-GPU NVLINK texture and geometry acceleration structure peer-to-peer sharing example.
-# Rendering is derived from the rtigo3 multi-GPU strategy RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
+# Rendering is derived from the optix_hair multi-GPU strategy RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
 # Also implements a simple arena allocator to reduce CUDA device memory fragmentation.
 #add_subdirectory( nvlink_shared )

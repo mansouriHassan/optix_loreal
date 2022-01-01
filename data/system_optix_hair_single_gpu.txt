@@ -1,24 +1,27 @@
-# This nvlink_shared system option file handles multiple settings of the same option, the last one wins!
+# This optix_hair system option file handles multiple settings of the same option, the last one wins!
 
-# There is only one rendering strategy implemented in this renderer which matches the optix_hair strategy 3:
+# Define the raytracer's rendering strategy
+# 0 = Interactive Single-GPU, with or without OpenGL interop.
+#     Full frame accumulation in local memory, read to host buffer when needed.
+# 1 = Interactive Multi-GPU Zero Copy, no OpenGL interop.
+#     Tiled rendering with tileSize blocks in a checkered pattern distributed to all enabled GPUs directly to pinned memory on the host.
+#     Works with any number of enabled devices.
+# 2 = Interactive Multi-GPU Peer Access
+#     Tiled rendering with tileSize blocks in a checkered pattern evenly distributed to all enabled GPUs.
+#     The full image is allocated only on the first device, the peer devices directly render into the shared buffer.
+#     This is not going to work with more than one island in the active devices.
 # 3 = Interactive Multi-GPU rendering into local GPU buffers of roughly 1/activeDevices size.
 #     Tiled rendering with tileSize blocks in a checkered pattern evenly distributed to all enabled GPUs.
 #     The full image is composited on the first device resp. the OpenGL interop device.
 #     The local data from other devices (not full resolution) is copied to that main device and composited by a native CUDA kernel.
 
-# This setting is ignored by the nvlink_shared parser.
-strategy 3
+strategy 0
 
 # The devicesMask indicates which devices should be used in a 32-bit bitfield.
 # The default is 255 which means 8 bits set so all boards in an RTX server.
 # The application will only use the boards actually visible.
 
-devicesMask 3
-
-# The arenaSize defines the default allocation size of each Arena in mega bytes.
-# Default is 64 MB, minimum possible is 1 MB.
-
-arenaSize 256
+devicesMask 1
 
 # Use different strategies to update the OpenGL display texture.
 # The performance effect of interop 2 is only really visible interactive rendering (-m 0) and present 1.
@@ -53,19 +56,21 @@ tileSize 16 16
 # The camera samples are distributed with a fixed rotated grid.
 # Final frame rendering algorithms need the samples per pixels anyway.
 
-samplesSqrt 16
+samplesSqrt 32
 
 # Environment light 
 # 0 = black, no light.
 # 1 = white, not importance sampled.
 # 2 = spherical HDR environment map, importance sampled, uses the file specified by envMap
 
-miss 2
+miss 1
 
 # Spherical HDR environment map, only used with "miss 2".
 # envMap "<filename>"
 
-envMap "NV_Default_HDR_3000x1500.hdr"
+envMap "TEST 9" "NV_TEST_9_HDR_3000x1500_Mod_19.hdr"
+
+
 
 # Spherical environment rotation around up-axis, only used with "miss 2"
 # envRotation <float> in range [0.0f, 1.0f]
@@ -77,11 +82,16 @@ envRotation 0
 # 1 = 1x1 meter square light 1.95 meters above the scene to fit in a 2x2x2 box with floor at y = 0 (Cornell Box).
 # 2 = 4x4 meter square light 4 meters above the scene.
 
-light 0
+light 1 # front
+light 2 # back
+light 3 # left
+light 4 # right
+light 5 # top
 
 # Path lengths minimum and maximum.
 # Minimum path length before Russian Roulette kicks in.
 # Maximum path length before termination.
+# Maximum number of volume scattering events.
 # Set min >= max to disable Russian Rouelette.
 # pathLengths <int> <int> in range [0, 100]
 
@@ -108,23 +118,34 @@ lensShader 0
 
 # Camera center of interest.
 # Absolute x, y, z coordinates in scene units (meters)
-# This setting is for the scene_nvlink_spheres_5_5_5.txt
 
-center 2.7 4.8 5.5
+center 0 1 0
 
 # Camera orientation relative to center of interest and projection
 # theta [-1.0f, 1.0f]
 # phi   [0.0f, 1.0f]
 # yfov in degrees [1, 179]
 # distance from center of interest [0.0f, inf] in meters
-# This setting is for the scene_nvlink_spheres_5_5_5.txt
 
-camera 0.57 0.65 45 23
+#lock_camera #bool lock camera
+
+camera 0.815 0.6 45 10
+camera 0.251406 0.570703 32 10
+camera 0.981875 0.535547 32 10
+camera 0.427188 0.529688 32 10
+camera 0.7475 0.525781 32 10
+camera 0.251406 0.891016 32 10
+
+
 
 # Path with an existing(!) folder and optional partial filename prefix which should receive the screenshots. 
 # If this is just a folder, end it with '/'
 
-prefixScreenshot "./screenshots/nvlink_shared"
+prefixScreenshot "./screenshots/optix_hair"
+
+prefixColorSwitch "./ColorSwitch/"
+
+prefixSettings "./Settings/"
 
 # Tonemapper settings.
 # Neutral tonemapper GUI settings showing the linear image:
